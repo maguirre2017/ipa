@@ -320,3 +320,35 @@ st.divider()
 st.caption("Notas: (1) Proceedings cuentan en PPC solo si están indexados (Scopus/WoS) o con cuartil. "
            "(2) Para LCL/PPI se usa conteo unitario. (3) Interculturalidad: +0.21 por artículo marcado, tope λ≤1. "
            "(4) Use deduplicación para evitar doble conteo por coautorías.")
+st.divider()
+st.subheader("Consultas en lenguaje natural (IA)")
+
+question = st.text_input("Ejemplo: ¿El IIPA supera 1.5 en el periodo seleccionado?")
+
+if st.button("Preguntar a la IA") and question:
+    if not client:
+        st.error("No se detecta OPENAI_API_KEY en el entorno.")
+    else:
+        # Contexto que la IA debe usar (ejemplo: métricas calculadas arriba)
+        contexto = {
+            "PPC": float(ppc),
+            "PPA": float(ppa),
+            "LCL": float(lcl),
+            "PPI": float(ppi),
+            "IIPA": float(iipa) if not np.isnan(iipa) else None,
+            "Periodo": list(sorted(set(year_calc_sel))),
+            "Denominador": {"PTC": int(PTC_sum), "PMT": int(PMT_sum)}
+        }
+
+        try:
+            respuesta = client.chat.completions.create(
+                model="gpt-4o-mini",   # Puede cambiar a gpt-4o si tiene acceso
+                messages=[
+                    {"role": "system", "content": "Eres un analista institucional. Responde con precisión usando el contexto dado."},
+                    {"role": "user", "content": f"Pregunta: {question}\n\nContexto:\n{contexto}"}
+                ],
+                temperature=0.1
+            )
+            st.success(respuesta.choices[0].message.content)
+        except Exception as e:
+            st.error(f"Error al consultar la IA: {e}")
