@@ -1,12 +1,18 @@
 
-import os
+
 import pandas as pd
 import numpy as np
 import streamlit as st
 import altair as alt
+import os
+from openai import OpenAI
+
+api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=api_key) if api_key else None
+
 
 # ============ Config general ============
-api_key = os.getenv("OPENAI_API_KEY")
+
 st.set_page_config(page_title="IIPA — Dashboard", layout="wide")
 
 st.title("Índice de Producción Académica per cápita (IPA)")
