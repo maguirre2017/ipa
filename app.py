@@ -59,10 +59,10 @@ if df.empty:
 df.columns = [str(c).strip().upper() for c in df.columns]
 
 # Asegurar columnas mínimas
-for col in ["AÑO","FACULTAD","CARRERA","TIPO","PUBLICACIÓN","REVISTA","FECHA","DOI","URL","CUARTIL","INDEXACIÓN","INTERCULTURAL","CLASE"]:
+for col in ["AÑO","FACULTAD","CARRERA","TIPO","PUBLICACIÓN","REVISTA","FECHA","DOI","URL","CUARTIL","INDEXACIÓN","INTERCULTURAL","CLASE","SEDE"]:
     if col not in df.columns:
         df[col] = np.nan
-
+        
 # Tipos y fechas
 df["AÑO"] = pd.to_numeric(df["AÑO"], errors="coerce").astype("Int64")
 if "FECHA" in df.columns:
@@ -165,6 +165,8 @@ with st.sidebar:
     fac_sel = st.multiselect("Facultad", sorted(df["FACULTAD"].dropna().unique()), default=sorted(df["FACULTAD"].dropna().unique()))
     car_sel = st.multiselect("Carrera", sorted(df["CARRERA"].dropna().unique()), default=sorted(df["CARRERA"].dropna().unique()))
     tipo_sel = st.multiselect("Tipo de publicación", sorted(df["TIPO"].dropna().unique()), default=sorted(df["TIPO"].dropna().unique()))
+    sede_sel = st.multiselect("Sede", sorted(df["SEDE"].dropna().unique()), default=sorted(df["SEDE"].dropna().unique()))
+
 
     st.divider()
     st.header("Cálculo del IIPA")
@@ -182,16 +184,17 @@ uploaded_staff = st.sidebar.file_uploader("Excel de personal (AÑO, FACULTAD, PT
 ptc_manual = st.sidebar.number_input("PTC (manual si no sube Excel)", min_value=0, value=0, step=1)
 pmt_manual = st.sidebar.number_input("PMT (manual si no sube Excel)", min_value=0, value=0, step=1)
 
-def apply_filters(base, years, fac, car, tipo):
+def apply_filters(base, years, fac, car, tipo, sede):
     f = base.copy()
     if years: f = f[f["AÑO"].isin(years)]
     if fac:   f = f[f["FACULTAD"].isin(fac)]
     if car:   f = f[f["CARRERA"].isin(car)]
     if tipo:  f = f[f["TIPO"].isin(tipo)]
+    if sede:  f = f[f["SEDE"].isin(sede)]
     return f
 
-fdf_vis  = apply_filters(df, year_vis_sel, fac_sel, car_sel, tipo_sel)
-fdf_calc = apply_filters(df, year_calc_sel, fac_sel, car_sel, tipo_sel)
+fdf_vis  = apply_filters(df, year_vis_sel, fac_sel, car_sel, tipo_sel, sede_sel)
+fdf_calc = apply_filters(df, year_calc_sel, fac_sel, car_sel, tipo_sel, sede_sel)
 
 # Deduplicación por DOI/Título
 def deduplicate(df_in):
