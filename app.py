@@ -333,8 +333,33 @@ st.caption("Notas: (1) Proceedings cuentan en PPC solo si están indexados (Scop
            "(4) Use deduplicación para evitar doble conteo por coautorías.")
 st.divider()
 st.subheader("Consultas en lenguaje natural (IA)")
+# Construir el contexto para pasar a ChatGPT
+contexto = {
+    "Periodo": list(sorted(set(year_calc_sel))),
+    "Denominador": {
+        "Año": int(denom_year),
+        "PTC": int(PTC_sum),
+        "PMT": int(PMT_sum),
+        "Valor": float(den) if den > 0 else None,
+    },
+    "Componentes": {
+        "PPC": float(ppc),
+        "PPA": float(ppa),
+        "LCL": float(lcl),
+        "PPI": float(ppi),
+    },
+    "IIPA": float(iipa) if not np.isnan(iipa) else None,
+}
 
 question = st.text_input("Ejemplo: ¿El IIPA supera 1.5 en el periodo seleccionado?")
+resp = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[
+        {"role": "system", "content": "Eres analista institucional. Responde con precisión usando solo el contexto dado."},
+        {"role": "user", "content": f"Pregunta: {question}\n\nContexto:\n{contexto}"}
+    ],
+    temperature=0.1
+)
 
 if st.button("Preguntar a la IA") and question:
     if USE_SDK_V1 and client:
