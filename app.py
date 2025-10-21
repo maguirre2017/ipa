@@ -1,16 +1,27 @@
-
-
+import os
+from openai import OpenAI
 import pandas as pd
 import numpy as np
 import streamlit as st
 import altair as alt
-import os
-from openai import OpenAI
+
 
 api_key = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=api_key) if api_key else None
 
-
+# Import compatible con SDK nuevo y antiguo
+USE_SDK_V1 = True
+try:
+    from openai import OpenAI  # SDK >= 1.0
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+except Exception:
+    USE_SDK_V1 = False
+    try:
+        import openai  # SDK < 1.0
+        openai.api_key = os.getenv("OPENAI_API_KEY")
+    except Exception:
+        openai = None
+        client = None
 # ============ Config general ============
 
 st.set_page_config(page_title="IIPA — Dashboard", layout="wide")
