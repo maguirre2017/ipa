@@ -30,6 +30,14 @@ import altair as alt
 # ============ Config general ============
 
 st.set_page_config(page_title="IIPA — Dashboard", layout="wide")
+st.markdown("""
+<style>
+html, body, [class*="css"]  {
+  font-family: "Inter", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+</style>
+""", unsafe_allow_html=True)
+
 
 st.title("Índice de Producción Académica per cápita (IPA)")
 st.caption("IIPA = (PPC + PPA + LCL + PPI) / (PTC + 0.5·PMT). Incluye mapeo robusto de CLASE, "
@@ -291,28 +299,71 @@ st.caption(f"Periodo (años cálculo): {sorted(set(year_calc_sel))} | Año denom
 # ============ Visualización (sobre fdf_vis) ============
 st.divider()
 st.subheader("Exploración de publicaciones (visualización)")
+# Paleta (puede cambiar "goldgreen" por otra: 'viridis', 'blues', 'redblue', etc.)
+color_scale = alt.Scale(scheme="goldgreen")
 
 by_year = fdf_vis.groupby("AÑO").size().reset_index(name="Publicaciones")
-st.altair_chart(
-    alt.Chart(by_year).mark_bar().encode(x="AÑO:O", y="Publicaciones:Q", tooltip=["AÑO","Publicaciones"])
-    .properties(title="Publicaciones por año"),
-    use_container_width=True
+
+bars_year = alt.Chart(by_year).mark_bar().encode(
+    x=alt.X("AÑO:O", title="Año"),
+    y=alt.Y("Publicaciones:Q", title="N.º de publicaciones"),
+    tooltip=["AÑO","Publicaciones"],
+    color=alt.value("#2E7D32")  # color fijo (verde) o use color_scale
 )
 
-by_fac = fdf_vis.groupby(["AÑO","FACULTAD"]).size().reset_index(name="Publicaciones")
+labels_year = alt.Chart(by_year).mark_text(
+    align="center", baseline="bottom", dy=-5
+).encode(
+    x="AÑO:O",
+    y="Publicaciones:Q",
+    text="Publicaciones:Q"
+)
+
 st.altair_chart(
-    alt.Chart(by_fac).mark_bar().encode(x="FACULTAD:N", y="sum(Publicaciones):Q", color="AÑO:O", tooltip=["AÑO","FACULTAD","Publicaciones"])
-    .properties(title="Producción por facultad").interactive(),
+    (bars_year + labels_year).properties(title="Publicaciones por año"),
     use_container_width=True
 )
+by_fac_trend = fdf_vis.groupby(["AÑO","FACULTAD"]).size().reset_index(name="Publicaciones")
+
+highlight = alt.selection_point(on="mouseover", fields=["FACULTAD"], nearest=True, empty=False)
+
+line_fac = alt.Chart(by_fac_trend).mark_line(point=True).encode(
+    x=alt.X("AÑO:O", title="Año"),
+    y=alt.Y("Publicaciones:Q", title="N.º de publicaciones"),
+    color=alt.Color("FACULTAD:N", legend=None, scale=color_scale),
+    opacity=alt.condition(highlight, alt.value(1.0), alt.value(0.15)),
+    tooltip=["FACULTAD","AÑO","Publicaciones"]
+).add_params(highlight).properties(title="Tendencia por facultad (resalte con el ratón)")
+
+st.altair_chart(line_fac, use_container_width=True)
+
+
+by_fac = fdf_vis.groupby(["AÑO","FACULTAD"]).size().reset_index(name="Publicaciones")
+
+stacked = alt.Chart(by_fac).mark_bar().encode(
+    x=alt.X("FACULTAD:N", title="Facultad"),
+    y=alt.Y("sum(Publicaciones):Q", stack="normalize", title="Proporción dentro del año"),
+    color=alt.Color("AÑO:O", scale=color_scale),
+    tooltip=["AÑO","FACULTAD","Publicaciones"]
+).properties(title="Composición relativa por facultad (porcentaje)")
+
+st.altair_chart(stacked, use_container_width=True)
+
 
 fdf_vis["_CU"] = fdf_vis["CUARTIL"].fillna("SIN CUARTIL").str.upper().str.strip()
 by_cu = fdf_vis.groupby(["AÑO","_CU"]).size().reset_index(name="Publicaciones")
-st.altair_chart(
-    alt.Chart(by_cu).mark_bar().encode(x=alt.X("_CU:N", title="Cuartil/Calidad"), y="sum(Publicaciones):Q", color="AÑO:O", tooltip=["AÑO","_CU","Publicaciones"])
-    .properties(title="Mapa de cuartiles/calidad por año").interactive(),
-    use_container_width=True
-)
+
+heat = alt.Chart(by_cu).mark_rect().encode(
+    x=alt.X("AÑO:O", title="Año"),
+    y=alt.Y("_CU:N", title="Cuartil / Calidad"),
+    color=alt.Color("Publicaciones:Q", title="N.º de publicaciones"),
+    tooltip=["AÑO","_CU","Publicaciones"]
+).properties(title="Intensidad por cuartil y año (heatmap)")
+
+st.altair_chart(heat, use_container_width=True)
+
+st.caption("Progreso hacia la meta CACES (IIPA ≥ 1.5)")
+st.progress( min(1.0, float(0 if np.isnan(iipa) else iipa) / 1.5) )
 
 # Detalle de artículos del periodo de cálculo (λ)
 is_ppc_rows = fdf_calc[is_ppc]
