@@ -337,29 +337,32 @@ st.subheader("Consultas en lenguaje natural (IA)")
 question = st.text_input("Ejemplo: ¿El IIPA supera 1.5 en el periodo seleccionado?")
 
 if st.button("Preguntar a la IA") and question:
-    if not client:
-        st.error("No se detecta OPENAI_API_KEY en el entorno.")
-    else:
-        # Contexto que la IA debe usar (ejemplo: métricas calculadas arriba)
-        contexto = {
-            "PPC": float(ppc),
-            "PPA": float(ppa),
-            "LCL": float(lcl),
-            "PPI": float(ppi),
-            "IIPA": float(iipa) if not np.isnan(iipa) else None,
-            "Periodo": list(sorted(set(year_calc_sel))),
-            "Denominador": {"PTC": int(PTC_sum), "PMT": int(PMT_sum)}
-        }
-
+    if USE_SDK_V1 and client:
         try:
-            respuesta = client.chat.completions.create(
-                model="gpt-4o-mini",   # Puede cambiar a gpt-4o si tiene acceso
+            resp = client.chat.completions.create(
+                model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "Eres un analista institucional. Responde con precisión usando el contexto dado."},
-                    {"role": "user", "content": f"Pregunta: {question}\n\nContexto:\n{contexto}"}
+                    {"role": "system", "content": "Eres analista institucional. Responde con precisión usando solo el contexto dado."},
+                    {"role": "user", "content": f"Pregunta: {question}\n\nContexto: {contexto}"}
                 ],
                 temperature=0.1
             )
-            st.success(respuesta.choices[0].message.content)
+            st.success(resp.choices[0].message.content)
         except Exception as e:
-            st.error(f"Error al consultar la IA: {e}")
+            st.error(f"Error (SDK v1): {e}")
+    elif (not USE_SDK_V1) and openai:
+        try:
+            resp = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "Eres analista institucional. Responde con precisión usando solo el contexto dado."},
+                    {"role": "user", "content": f"Pregunta: {question}\n\nContexto: {contexto}"}
+                ],
+                temperature=0.1
+            )
+            st.success(resp["choices"][0]["message"]["content"])
+        except Exception as e:
+            st.error(f"Error (SDK legacy): {e}")
+    else:
+        st.error("No se detecta el paquete 'openai' ni la variable OPENAI_API_KEY. Revise requirements y Secrets.")
+
