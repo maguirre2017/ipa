@@ -336,25 +336,7 @@ st.divider()
 st.caption("Notas: (1) Proceedings cuentan en PPC solo si están indexados (Scopus/WoS) o con cuartil. "
            "(2) Para LCL/PPI se usa conteo unitario. (3) Interculturalidad: +0.21 por artículo marcado, tope λ≤1. "
            "(4) Use deduplicación para evitar doble conteo por coautorías.")
-st.divider()
-st.subheader("Consultas en lenguaje natural (IA)")
-# Construir el contexto para pasar a ChatGPT
-contexto = {
-    "Periodo": list(sorted(set(year_calc_sel))),
-    "Denominador": {
-        "Año": int(denom_year),
-        "PTC": int(PTC_sum),
-        "PMT": int(PMT_sum),
-        "Valor": float(den) if den > 0 else None,
-    },
-    "Componentes": {
-        "PPC": float(ppc),
-        "PPA": float(ppa),
-        "LCL": float(lcl),
-        "PPI": float(ppi),
-    },
-    "IIPA": float(iipa) if not np.isnan(iipa) else None,
-}
+
 
 # ============ Consultas en lenguaje natural (IA) ============
 st.divider()
