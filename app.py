@@ -366,7 +366,7 @@ if st.button("Preguntar a la IA") and question:
     if USE_SDK_V1 and client:
         try:
             resp = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": "Eres analista institucional. Responde con precisión usando solo el contexto dado."},
                     {"role": "user", "content": f"Pregunta: {question}\n\nContexto: {contexto}"}
