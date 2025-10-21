@@ -1,27 +1,32 @@
 import os
-from openai import OpenAI
+import streamlit as st
+
+# ============ Configuración de OpenAI ============
+USE_SDK_V1 = True
+client = None
+openai = None
+
+api_key = os.getenv("OPENAI_API_KEY")
+
+try:
+    from openai import OpenAI  # SDK >= 1.0
+    if api_key:
+        client = OpenAI(api_key=api_key)
+except Exception:
+    USE_SDK_V1 = False
+    try:
+        import openai  # SDK < 1.0
+        if api_key:
+            openai.api_key = api_key
+    except Exception:
+        openai = None
 import pandas as pd
 import numpy as np
 import streamlit as st
 import altair as alt
 
 
-api_key = os.getenv("OPENAI_API_KEY")
-client = OpenAI(api_key=api_key) if api_key else None
 
-# Import compatible con SDK nuevo y antiguo
-USE_SDK_V1 = True
-try:
-    from openai import OpenAI  # SDK >= 1.0
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-except Exception:
-    USE_SDK_V1 = False
-    try:
-        import openai  # SDK < 1.0
-        openai.api_key = os.getenv("OPENAI_API_KEY")
-    except Exception:
-        openai = None
-        client = None
 # ============ Config general ============
 
 st.set_page_config(page_title="IIPA — Dashboard", layout="wide")
@@ -351,15 +356,29 @@ contexto = {
     "IIPA": float(iipa) if not np.isnan(iipa) else None,
 }
 
+# ============ Consultas en lenguaje natural (IA) ============
+st.divider()
+st.subheader("Consultas en lenguaje natural (IA)")
+
+# Construir contexto
+contexto = {
+    "Periodo": list(sorted(set(year_calc_sel))),
+    "Denominador": {
+        "Año": int(denom_year),
+        "PTC": int(PTC_sum),
+        "PMT": int(PMT_sum),
+        "Valor": float(den) if den > 0 else None,
+    },
+    "Componentes": {
+        "PPC": float(ppc),
+        "PPA": float(ppa),
+        "LCL": float(lcl),
+        "PPI": float(ppi),
+    },
+    "IIPA": float(iipa) if not np.isnan(iipa) else None,
+}
+
 question = st.text_input("Ejemplo: ¿El IIPA supera 1.5 en el periodo seleccionado?")
-resp = client.chat.completions.create(
-    model="gpt-4o-mini",
-    messages=[
-        {"role": "system", "content": "Eres analista institucional. Responde con precisión usando solo el contexto dado."},
-        {"role": "user", "content": f"Pregunta: {question}\n\nContexto:\n{contexto}"}
-    ],
-    temperature=0.1
-)
 
 if st.button("Preguntar a la IA") and question:
     if USE_SDK_V1 and client:
@@ -389,5 +408,4 @@ if st.button("Preguntar a la IA") and question:
         except Exception as e:
             st.error(f"Error (SDK legacy): {e}")
     else:
-        st.error("No se detecta el paquete 'openai' ni la variable OPENAI_API_KEY. Revise requirements y Secrets.")
-
+        st.error("No se detecta OPENAI_API_KEY o el paquete openai. Revise 'Secrets' y requirements.")
