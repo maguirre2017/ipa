@@ -40,8 +40,8 @@ html, body, [class*="css"]  {
 
 
 st.title("Índice de Producción Académica per cápita (IP)")
-st.caption("IIPA = (PPC + PPA + LCL + PPI) / (PTC + 0.5·PMT). Incluye mapeo robusto de CLASE, "
-           "separación de años de visualización vs. cálculo, deduplicación por DOI/Título y componente intercultural (tope λ≤1).")
+st.caption("IP = (PPC + PPA + LCL + PPI) / (PTC + 0.5·PMT)
+# =======IP==== Incluye mapeo de CLASE, "separación de años de visualización vs. cálculo, deduplicación por DOI/Título y componente intercultural (tope λ≤1)"
 
 # ============ Carga de datos de publicaciones ============
 def load_pubs(uploaded_file=None):
