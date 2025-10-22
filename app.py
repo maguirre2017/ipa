@@ -29,7 +29,7 @@ import altair as alt
 
 # ============ Config general ============
 
-st.set_page_config(page_title="IIPA — Dashboard", layout="wide")
+st.set_page_config(page_title="IPA — Dashboard", layout="wide")
 st.markdown("""
 <style>
 html, body, [class*="css"]  {
@@ -39,7 +39,7 @@ html, body, [class*="css"]  {
 """, unsafe_allow_html=True)
 
 
-st.title("Índice de Producción Académica per cápita (IPA)")
+st.title("Índice de Producción Académica per cápita (IP)")
 st.caption("IIPA = (PPC + PPA + LCL + PPI) / (PTC + 0.5·PMT). Incluye mapeo robusto de CLASE, "
            "separación de años de visualización vs. cálculo, deduplicación por DOI/Título y componente intercultural (tope λ≤1).")
 
@@ -70,7 +70,10 @@ df.columns = [str(c).strip().upper() for c in df.columns]
 for col in ["AÑO","FACULTAD","CARRERA","TIPO","PUBLICACIÓN","REVISTA","FECHA","DOI","URL","CUARTIL","INDEXACIÓN","INTERCULTURAL","CLASE","SEDE"]:
     if col not in df.columns:
         df[col] = np.nan
-        
+# Columna opcional para conteo de capítulos por libro
+if "TOTAL_CAPITULOS" not in df.columns:
+    df["TOTAL_CAPITULOS"] = np.nan
+
 # Tipos y fechas
 df["AÑO"] = pd.to_numeric(df["AÑO"], errors="coerce").astype("Int64")
 if "FECHA" in df.columns:
@@ -181,6 +184,12 @@ with st.sidebar:
     year_calc_sel = st.multiselect("Años del periodo (3 años concluidos)", years_all, default=default_vis)
     denom_year = st.selectbox("Año denominador (PTC + 0.5·PMT)", sorted(year_calc_sel) if year_calc_sel else years_all, index=len(sorted(year_calc_sel))-1 if year_calc_sel else (len(years_all)-1 if years_all else 0))
     dedup = st.checkbox("Deduplicar por DOI/Título (recomendado)", value=True)
+    st.subheader("Parámetros LCL (libros y capítulos)")
+    usar_total_caps = st.checkbox("Usar TOTAL_CAPITULOS si existe (peso = 1/TOTAL_CAPITULOS)", value=False)
+    factor_cap = st.number_input(
+    "Factor fijo por capítulo (si no hay TOTAL_CAPITULOS)",
+    min_value=0.1, max_value=1.0, value=0.25, step=0.05
+    )
 
     st.subheader("Interculturalidad (para artículos)")
     intercultural_from_col = st.checkbox("Usar columna INTERCULTURAL (True/1) si existe", value=False)
@@ -257,8 +266,24 @@ ppc = fdf_calc.loc[is_ppc].apply(infer_phi, axis=1).sum()
 # PPA: arte internacional (1.0) + nacional (0.9)
 ppa = float(fdf_calc["CLASE_NORM"].eq("ARTE_INT").sum())*1.0 + float(fdf_calc["CLASE_NORM"].eq("ARTE_NAC").sum())*0.9
 
-# LCL: libros + capítulos (unitario; puede ajustarse si tiene TOTAL_CAPITULOS)
-lcl = float(fdf_calc["CLASE_NORM"].eq("LIBRO").sum()) + float(fdf_calc["CLASE_NORM"].eq("CAPITULO").sum())
+# LCL: libros + capítulos (con opción de ponderar capítulos)
+mask_libro = fdf_calc["CLASE_NORM"].eq("LIBRO")
+mask_cap   = fdf_calc["CLASE_NORM"].eq("CAPITULO")
+
+libros = float(mask_libro.sum())
+
+if usar_total_caps:
+    # Pesar cada capítulo como 1 / TOTAL_CAPITULOS; si falta o es inválido, usar factor fijo
+    caps_df = fdf_calc.loc[mask_cap].copy()
+    caps_df["_den"] = pd.to_numeric(caps_df["TOTAL_CAPITULOS"], errors="coerce")
+    caps_df["_w"]   = 1.0 / caps_df["_den"]
+    caps = caps_df["_w"].where(~caps_df["_w"].isna() & np.isfinite(caps_df["_w"]), other=float(factor_cap)).sum()
+else:
+    # Sin TOTAL_CAPITULOS: contar capítulos con un factor fijo
+    caps = float(mask_cap.sum()) * float(factor_cap)
+
+lcl = libros + caps
+
 
 # PPI: propiedad intelectual aplicada
 ppi = float(fdf_calc["CLASE_NORM"].eq("PPI").sum())
@@ -295,12 +320,18 @@ c6.metric("PMT", f"{int(PMT_sum)}")
 c7.metric("IIPA", f"{iipa:.3f}" if not np.isnan(iipa) else "—")
 
 st.caption(f"Periodo (años cálculo): {sorted(set(year_calc_sel))} | Año denominador: {denom_year} | Deduplicación: {'Sí' if dedup else 'No'}")
+st.caption(
+    f"LCL = LIBROS ({int(libros)}) + CAPÍTULOS ("
+    f"{'1/TOTAL_CAPITULOS' if usar_total_caps else f'factor fijo = {factor_cap:.2f}'})."
+)
+
 
 # ============ Visualización (sobre fdf_vis) ============
 st.divider()
 st.subheader("Exploración de publicaciones (visualización)")
 # Paleta (puede cambiar "goldgreen" por otra: 'viridis', 'blues', 'redblue', etc.)
-color_scale = alt.Scale(scheme="goldgreen")
+color_scale = alt.Scale(scheme="tableau10")  # Alternativas: "category10", "dark2", "set2"
+
 
 by_year = fdf_vis.groupby("AÑO").size().reset_index(name="Publicaciones")
 
@@ -323,19 +354,31 @@ st.altair_chart(
     (bars_year + labels_year).properties(title="Publicaciones por año"),
     use_container_width=True
 )
+# ======= Gráfico de tendencia por facultad (versión mejorada) =======
 by_fac_trend = fdf_vis.groupby(["AÑO","FACULTAD"]).size().reset_index(name="Publicaciones")
 
 highlight = alt.selection_point(on="mouseover", fields=["FACULTAD"], nearest=True, empty=False)
 
-line_fac = alt.Chart(by_fac_trend).mark_line(point=True).encode(
+line_fac = alt.Chart(by_fac_trend).mark_line(
+    point=alt.OverlayMarkDef(filled=True, size=80, stroke="black", strokeWidth=0.5),
+    strokeWidth=3
+).encode(
     x=alt.X("AÑO:O", title="Año"),
     y=alt.Y("Publicaciones:Q", title="N.º de publicaciones"),
-    color=alt.Color("FACULTAD:N", legend=None, scale=color_scale),
-    opacity=alt.condition(highlight, alt.value(1.0), alt.value(0.15)),
+    color=alt.Color("FACULTAD:N", title="Facultad", scale=color_scale),
+    opacity=alt.condition(highlight, alt.value(1.0), alt.value(0.2)),
     tooltip=["FACULTAD","AÑO","Publicaciones"]
-).add_params(highlight).properties(title="Tendencia por facultad (resalte con el ratón)")
+).add_params(highlight).properties(
+    title="Tendencia por facultad (resalte con el ratón)"
+).configure_axis(
+    grid=True,
+    gridColor="#e0e0e0"
+).configure_view(
+    strokeWidth=0
+)
 
 st.altair_chart(line_fac, use_container_width=True)
+
 
 
 by_fac = fdf_vis.groupby(["AÑO","FACULTAD"]).size().reset_index(name="Publicaciones")
@@ -387,9 +430,15 @@ if not is_ppc_rows.empty:
     st.dataframe(detail, use_container_width=True)
 
 st.divider()
-st.caption("Notas: (1) Proceedings cuentan en PPC solo si están indexados (Scopus/WoS) o con cuartil. "
-           "(2) Para LCL/PPI se usa conteo unitario. (3) Interculturalidad: +0.21 por artículo marcado, tope λ≤1. "
-           "(4) Use deduplicación para evitar doble conteo por coautorías.")
+
+st.caption(
+    "Notas: (1) Proceedings cuentan en PPC solo si están indexados (Scopus/WoS) o con cuartil. "
+    "(2) LCL: libros ponderan 1; capítulos ponderan 1/TOTAL_CAPITULOS si se activa y existe la columna; "
+    f"en caso contrario capítulos ponderan un factor fijo configurable (actual: {factor_cap:.2f}). "
+    "(3) Interculturalidad: +0.21 por artículo marcado, tope λ≤1. "
+    "(4) Use deduplicación para evitar doble conteo por coautorías."
+)
+
 
 
 # ============ Consultas en lenguaje natural (IA) ============
