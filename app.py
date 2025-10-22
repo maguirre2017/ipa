@@ -29,7 +29,7 @@ import altair as alt
 
 # ============ Config general ============
 
-st.set_page_config(page_title="IPA — Dashboard", layout="wide")
+st.set_page_config(page_title="IP — Dashboard", layout="wide")
 st.markdown("""
 <style>
 html, body, [class*="css"]  {
@@ -39,9 +39,12 @@ html, body, [class*="css"]  {
 """, unsafe_allow_html=True)
 
 
-st.title("Índice de Producción Académica per cápita (IP)")
-st.caption("IP = (PPC + PPA + LCL + PPI) / (PTC + 0.5·PMT)
-# =======IP==== Incluye mapeo de CLASE, "separación de años de visualización vs. cálculo, deduplicación por DOI/Título y componente intercultural (tope λ≤1)"
+st.title("Índice de Producción Académica per cápita (IIPA)")
+st.caption("""
+IIPA = (PPC + PPA + LCL + PPI) / (PTC + 0.5·PMT).
+Incluye mapeo de CLASE, separación de años de visualización vs. cálculo, deduplicación por DOI/Título y componente intercultural (tope λ≤1).
+""")
+
 
 # ============ Carga de datos de publicaciones ============
 def load_pubs(uploaded_file=None):
@@ -405,8 +408,34 @@ heat = alt.Chart(by_cu).mark_rect().encode(
 
 st.altair_chart(heat, use_container_width=True)
 
-st.caption("Progreso hacia la meta CACES (IIPA ≥ 1.5)")
-st.progress( min(1.0, float(0 if np.isnan(iipa) else iipa) / 1.5) )
+# ======= Progreso hacia la meta CACES =======
+meta_caces = 1.5
+avance = float(0 if np.isnan(iipa) else iipa)
+progreso = min(1.0, avance / meta_caces)
+
+# Mostrar barra de progreso estándar
+st.caption("Progreso hacia la meta CACES (IP ≥ 1.5)")
+st.progress(progreso)
+
+# Determinar color según avance
+if avance >= meta_caces:
+    color = "#2E7D32"   # Verde (cumple o supera)
+elif avance >= meta_caces * 0.75:
+    color = "#F9A825"   # Amarillo (avance intermedio)
+else:
+    color = "#C62828"   # Rojo (bajo)
+
+# Mostrar etiqueta central con color dinámico
+st.markdown(
+    f"""
+    <div style='text-align:center; font-size:16px; font-weight:600;
+                color:{color}; margin-top:4px;'>
+        Avance: {avance:.2f} / {meta_caces:.2f}  ({progreso*100:.1f}%)
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
 
 # Detalle de artículos del periodo de cálculo (λ)
 is_ppc_rows = fdf_calc[is_ppc]
