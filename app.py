@@ -269,45 +269,77 @@ if aplicar_intercultural:
 else:
     st.caption("Interculturalidad: no aplicada.")
 
-# Visualización
+# ================== Visualización institucional (verdes) ==================
 st.divider()
 st.subheader("Exploración de publicaciones (visualización)")
-color_scale = alt.Scale(scheme="tableau10")
 
+# Paleta institucional — verdes armónicos elegantes
+palette_verde = ["#004D40", "#00796B", "#2E7D32", "#66BB6A", "#A5D6A7"]
+color_scale = alt.Scale(range=palette_verde)
+
+# --- Publicaciones por año ---
 by_year = fdf_vis.groupby("AÑO").size().reset_index(name="Publicaciones")
-bars_year = alt.Chart(by_year).mark_bar().encode(
-    x=alt.X("AÑO:O", title="Año"),
-    y=alt.Y("Publicaciones:Q", title="N.º de publicaciones"),
-    tooltip=["AÑO","Publicaciones"],
-    color=alt.value("#2E7D32")
-)
-labels_year = alt.Chart(by_year).mark_text(align="center", baseline="bottom", dy=-5).encode(
-    x="AÑO:O", y="Publicaciones:Q", text="Publicaciones:Q"
-)
-st.altair_chart((bars_year + labels_year).properties(title="Publicaciones por año"), use_container_width=True)
 
-by_fac_trend = fdf_vis.groupby(["AÑO","FACULTAD"]).size().reset_index(name="Publicaciones")
+bars_year = (
+    alt.Chart(by_year)
+    .mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5)
+    .encode(
+        x=alt.X("AÑO:O", title="Año"),
+        y=alt.Y("Publicaciones:Q", title="N.º de publicaciones"),
+        tooltip=["AÑO", "Publicaciones"],
+        color=alt.Color("AÑO:O", scale=color_scale, legend=None)
+    )
+    .properties(title="Publicaciones por año — Tonos institucionales")
+)
+
+labels_year = (
+    alt.Chart(by_year)
+    .mark_text(align="center", baseline="bottom", dy=-5, fontWeight="bold", color="#1B5E20")
+    .encode(x="AÑO:O", y="Publicaciones:Q", text="Publicaciones:Q")
+)
+
+st.altair_chart(bars_year + labels_year, use_container_width=True)
+
+# --- Tendencia por facultad ---
+by_fac_trend = fdf_vis.groupby(["AÑO", "FACULTAD"]).size().reset_index(name="Publicaciones")
+
 highlight = alt.selection_point(on="mouseover", fields=["FACULTAD"], nearest=True, empty=False)
-line_fac = alt.Chart(by_fac_trend).mark_line(
-    point=alt.OverlayMarkDef(filled=True, size=80, stroke="black", strokeWidth=0.5),
-    strokeWidth=3
-).encode(
-    x=alt.X("AÑO:O", title="Año"),
-    y=alt.Y("Publicaciones:Q", title="N.º de publicaciones"),
-    color=alt.Color("FACULTAD:N", title="Facultad", scale=color_scale),
-    opacity=alt.condition(highlight, alt.value(1.0), alt.value(0.2)),
-    tooltip=["FACULTAD","AÑO","Publicaciones"]
-).add_params(highlight).properties(title="Tendencia por facultad (resalte con el ratón)").configure_axis(grid=True, gridColor="#e0e0e0").configure_view(strokeWidth=0)
+
+line_fac = (
+    alt.Chart(by_fac_trend)
+    .mark_line(point=alt.OverlayMarkDef(filled=True, size=70, stroke="#1B5E20"), strokeWidth=3)
+    .encode(
+        x=alt.X("AÑO:O", title="Año"),
+        y=alt.Y("Publicaciones:Q", title="N.º de publicaciones"),
+        color=alt.Color("FACULTAD:N", title="Facultad", scale=color_scale),
+        opacity=alt.condition(highlight, alt.value(1.0), alt.value(0.25)),
+        tooltip=["FACULTAD", "AÑO", "Publicaciones"]
+    )
+    .add_params(highlight)
+    .properties(title="Tendencia por facultad (verdes institucionales)")
+    .configure_axis(grid=True, gridColor="#e0e0e0")
+    .configure_view(strokeWidth=0)
+)
+
 st.altair_chart(line_fac, use_container_width=True)
 
-by_fac = fdf_vis.groupby(["AÑO","FACULTAD"]).size().reset_index(name="Publicaciones")
-stacked = alt.Chart(by_fac).mark_bar().encode(
-    x=alt.X("FACULTAD:N", title="Facultad"),
-    y=alt.Y("sum(Publicaciones):Q", stack="normalize", title="Proporción dentro del año"),
-    color=alt.Color("AÑO:O", scale=color_scale),
-    tooltip=["AÑO","FACULTAD","Publicaciones"]
-).properties(title="Composición relativa por facultad (porcentaje)")
+# --- Composición relativa por facultad ---
+by_fac = fdf_vis.groupby(["AÑO", "FACULTAD"]).size().reset_index(name="Publicaciones")
+
+stacked = (
+    alt.Chart(by_fac)
+    .mark_bar()
+    .encode(
+        x=alt.X("FACULTAD:N", title="Facultad"),
+        y=alt.Y("sum(Publicaciones):Q", stack="normalize", title="Proporción dentro del año"),
+        color=alt.Color("AÑO:O", title="Año", scale=color_scale),
+        tooltip=["AÑO", "FACULTAD", "Publicaciones"]
+    )
+    .properties(title="Composición relativa por facultad (paleta verde)")
+)
+
 st.altair_chart(stacked, use_container_width=True)
+
 
 # Heatmap de cuartiles (versión con colores vivos)
 fdf_vis["_CU"] = fdf_vis["CUARTIL"].fillna("SIN CUARTIL").str.upper().str.strip()
