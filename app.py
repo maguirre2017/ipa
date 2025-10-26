@@ -18,8 +18,8 @@ html, body, [class*="css"]  {
 st.title("Índice de Producción Académica per cápita (IIPA)")
 st.caption("""
 IIPA = (PPC + PPA + LCL + PPI) / (PTC + 0.5·PMT).
-Incluye mapeo de CLASE, separación de años de visualización vs. cálculo,
-deduplicación por DOI/Título y componente intercultural con tope λ≤1 y límite del 21% de artículos.
+Incluye mapeo de CLASE, filtros por sede/facultad/carrera, separación de años de visualización vs. cálculo,
+deduplicación por DOI/Título, LCL configurable, y componente intercultural con tope λ≤1.
 """)
 
 def load_pubs(uploaded_file=None):
@@ -42,7 +42,7 @@ if df.empty:
 
 df.columns = [str(c).strip().upper() for c in df.columns]
 
-for col in ["AÑO","FACULTAD","CARRERA","SEDE","TIPO","PUBLICACIÓN","REVISTA","FECHA","DOI","URL","CUARTIL","INDEXACIÓN","INTERCULTURAL","CLASE"]:
+for col in ["AÑO","SEDE","FACULTAD","CARRERA","TIPO","PUBLICACIÓN","REVISTA","FECHA","DOI","URL","CUARTIL","INDEXACIÓN","CLASE"]:
     if col not in df.columns:
         df[col] = np.nan
 if "TOTAL_CAPITULOS" not in df.columns:
@@ -121,9 +121,9 @@ with st.sidebar:
     usar_total_caps = st.checkbox("Usar TOTAL_CAPITULOS si existe (peso = 1/TOTAL_CAPITULOS)", value=False)
     factor_cap = st.number_input("Factor fijo por capítulo (si no hay TOTAL_CAPITULOS)", min_value=0.1, max_value=1.0, value=0.25, step=0.05)
 
-    st.subheader("Interculturalidad (para artículos)")
-    intercultural_from_col = st.checkbox("Usar columna INTERCULTURAL (True/1) si existe", value=False)
-    intercultural_inc = st.slider("Incremento por artículo (0 a 0.21)", min_value=0.0, max_value=0.21, value=0.21, step=0.01)
+    st.subheader("Interculturalidad (artículos)")
+    aplicar_intercultural = st.checkbox("Aplicar +0.21 hasta el 21% del total de artículos PPC", value=False)
+    intercultural_inc = 0.21
 
 st.sidebar.header("Personal académico (denominador)")
 uploaded_staff = st.sidebar.file_uploader("Excel de personal (AÑO, FACULTAD, PTC, PMT)", type=["xlsx"], key="staff")
@@ -170,6 +170,7 @@ def phi_base_only(row):
         else:
             return 0.0
 
+# PPC: artículos + proceedings (solo indexados/cuatril)
 is_article = fdf_calc["CLASE_NORM"].eq("ARTICULO")
 is_proc = fdf_calc["CLASE_NORM"].eq("PROCEEDINGS") & (
     fdf_calc["INDEXACIÓN"].str.contains("SCOPUS|WOS|WEB OF SCIENCE", case=False, na=True) |
@@ -181,29 +182,26 @@ ppc_rows = fdf_calc.loc[is_ppc].copy()
 ppc_rows["phi_base"] = ppc_rows.apply(phi_base_only, axis=1)
 n_ppc_total = int(len(ppc_rows))
 
-if intercultural_from_col and n_ppc_total > 0:
-    elig = ppc_rows["INTERCULTURAL"].astype(str).str.strip().str.lower().isin({"1","true","sí","si","y","yes"})
-else:
-    elig = pd.Series(False, index=ppc_rows.index)
-
-n_limit = int(np.floor(0.21 * n_ppc_total))
-ppc_rows["gain"] = np.minimum(1.0, ppc_rows["phi_base"] + intercultural_inc) - ppc_rows["phi_base"]
-cands = ppc_rows[elig & (ppc_rows["gain"] > 0)].copy().sort_values("gain", ascending=False)
-to_apply_idx = cands.index[:n_limit]
-
 ppc_rows["lambda"] = ppc_rows["phi_base"]
-ppc_rows.loc[to_apply_idx, "lambda"] = np.minimum(1.0, ppc_rows.loc[to_apply_idx, "phi_base"] + intercultural_inc)
+n_aplicados, pct_aplicado = 0, 0.0
+if aplicar_intercultural and n_ppc_total > 0:
+    n_limit = int(np.floor(0.21 * n_ppc_total))
+    ppc_rows["gain"] = np.minimum(1.0, ppc_rows["phi_base"] + intercultural_inc) - ppc_rows["phi_base"]
+    cands = ppc_rows.sort_values("gain", ascending=False)
+    to_apply_idx = cands.index[:n_limit]
+    ppc_rows.loc[to_apply_idx, "lambda"] = np.minimum(1.0, ppc_rows.loc[to_apply_idx, "phi_base"] + intercultural_inc)
+    n_aplicados = len(to_apply_idx)
+    pct_aplicado = (n_aplicados / n_ppc_total * 100.0) if n_ppc_total > 0 else 0.0
 
-n_aplicados = int(len(to_apply_idx))
-pct_aplicado = (n_aplicados / n_ppc_total * 100.0) if n_ppc_total > 0 else 0.0
 ppc = float(ppc_rows["lambda"].sum())
 
+# PPA
 ppa = float(fdf_calc["CLASE_NORM"].eq("ARTE_INT").sum())*1.0 + float(fdf_calc["CLASE_NORM"].eq("ARTE_NAC").sum())*0.9
 
+# LCL (libros + capítulos)
 mask_libro = fdf_calc["CLASE_NORM"].eq("LIBRO")
 mask_cap   = fdf_calc["CLASE_NORM"].eq("CAPITULO")
 libros = float(mask_libro.sum())
-
 if usar_total_caps:
     caps_df = fdf_calc.loc[mask_cap].copy()
     caps_df["_den"] = pd.to_numeric(caps_df["TOTAL_CAPITULOS"], errors="coerce")
@@ -213,7 +211,9 @@ else:
     caps = float(mask_cap.sum()) * float(factor_cap)
 lcl = libros + caps
 
+# PPI
 ppi = float(fdf_calc["CLASE_NORM"].eq("PPI").sum())
+
 numerador_total = ppc + ppa + lcl + ppi
 
 def get_denominator():
@@ -232,6 +232,7 @@ def get_denominator():
 den, PTC_sum, PMT_sum = get_denominator()
 iipa = (numerador_total / den) if den > 0 else np.nan
 
+# KPIs
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("PPC (artículos ponderados)", f"{ppc:.2f}")
 c2.metric("PPA (artística)", f"{ppa:.2f}")
@@ -245,8 +246,12 @@ c7.metric("IIPA", f"{iipa:.3f}" if not np.isnan(iipa) else "—")
 
 st.caption(f"Periodo (cálculo): {sorted(set(year_calc_sel))} | Año denominador: {denom_year} | Deduplicación: {'Sí' if dedup else 'No'}")
 st.caption(f"LCL = LIBROS ({int(libros)}) + CAPÍTULOS ({'1/TOTAL_CAPITULOS' if usar_total_caps else f'factor fijo = {factor_cap:.2f}'}).")
-st.caption(f"Interculturalidad aplicada a {n_aplicados} de {n_ppc_total} artículos PPC ({pct_aplicado:.1f}%, tope 21%).")
+if aplicar_intercultural:
+    st.caption(f"Interculturalidad aplicada a {n_aplicados} de {n_ppc_total} artículos PPC ({pct_aplicado:.1f}% del total; tope 21%).")
+else:
+    st.caption("Interculturalidad: no aplicada.")
 
+# Visualización
 st.divider()
 st.subheader("Exploración de publicaciones (visualización)")
 color_scale = alt.Scale(scheme="tableau10")
@@ -296,6 +301,7 @@ heat = alt.Chart(by_cu).mark_rect().encode(
 ).properties(title="Intensidad por cuartil y año (heatmap)")
 st.altair_chart(heat, use_container_width=True)
 
+# Velocímetro
 meta_caces = 1.5
 avance = float(0 if np.isnan(iipa) else iipa)
 max_gauge = 2.0
@@ -328,7 +334,7 @@ st.plotly_chart(fig, use_container_width=True)
 
 if not ppc_rows.empty:
     detail = ppc_rows[["AÑO","SEDE","FACULTAD","CARRERA","PUBLICACIÓN","REVISTA","CUARTIL",
-                       "INDEXACIÓN","INTERCULTURAL","phi_base","lambda"]].copy()
+                       "INDEXACIÓN","phi_base","lambda"]].copy()
     detail = detail.rename(columns={"phi_base":"φ (impacto)", "lambda":"λ (final)"})
     detail["INTERCULTURAL_APLICADA"] = detail["λ (final)"] > detail["φ (impacto)"]
     st.subheader("Detalle de PPC (φ base y λ final)")
@@ -338,6 +344,6 @@ st.divider()
 st.caption(
     "Notas: (1) Proceedings cuentan en PPC solo si están indexados (Scopus/WoS) o con cuartil. "
     "(2) LCL: libros ponderan 1; capítulos ponderan 1/TOTAL_CAPITULOS si se activa; de lo contrario, factor fijo. "
-    "(3) Interculturalidad: +0.21 tope λ≤1 con límite del 21% de los artículos PPC. "
+    "(3) Interculturalidad: opción de +0.21 aplicada hasta el 21% del total de artículos PPC (sin usar columnas del Excel). "
     "(4) Use deduplicación para evitar doble conteo por coautorías."
 )
