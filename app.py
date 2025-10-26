@@ -1,4 +1,3 @@
-
 import os
 import pandas as pd
 import numpy as np
@@ -60,7 +59,7 @@ if df.empty:
 
 df.columns = [str(c).strip().upper() for c in df.columns]
 
-for col in ["AÑO","SEDE","FACULTAD","CARRERA","TIPO","PUBLICACIÓN","REVISTA","FECHA","DOI","URL","CUARTIL","INDEXACIÓN","CLASE","TOTAL_CAPITULOS"]:
+for col in ["AÑO","SEDE","FACULTAD","CARRERA","TIPO","PUBLICACIÓN","REVISTA","FECHA","DOI","URL","CUARTIL","INDEXACIÓN","CLASE","TOTAL_CAPITULOS","INTERCULTURAL"]:
     if col not in df.columns:
         df[col] = np.nan
 
@@ -189,20 +188,31 @@ def apply_filters(base, years, fac, car, tipo, sede):
     if sede:  f = f[f["SEDE"].isin(sede)]
     return f
 
-fdf_vis  = apply_filters(df, year_vis_sel, fac_sel, car_sel, tipo_sel, sede_sel)
+fdf_vis  = apply_filters(df, year_vis_sel,  fac_sel, car_sel, tipo_sel, sede_sel)
 fdf_calc = apply_filters(df, year_calc_sel, fac_sel, car_sel, tipo_sel, sede_sel)
 
-# Deduplicación por DOI/Título
-def deduplicate(df_in):
-    if df_in.empty: return df_in
+# ================== Deduplicación ==================
+def deduplicate(df_in, by_class=False):
+    """
+    Deduplica por DOI/Título. Si by_class=True, deduplica por (KEY, CLASE_NORM),
+    de modo que un mismo DOI solo cuente una vez dentro de cada CLASE.
+    """
+    if df_in is None or df_in.empty:
+        return df_in
     d = df_in.copy()
     d["_DOI"] = d["DOI"].fillna("").astype(str).str.strip().str.lower()
     d["_TIT"] = d["PUBLICACIÓN"].fillna("").astype(str).str.strip().str.lower()
     d["_KEY"] = np.where(d["_DOI"] != "", "doi:" + d["_DOI"], "tit:" + d["_TIT"])
-    return d.drop_duplicates(subset=["_KEY"])
+    subset_cols = ["_KEY", "CLASE_NORM"] if by_class else ["_KEY"]
+    return d.drop_duplicates(subset=subset_cols)
 
 if dedup:
-    fdf_calc = deduplicate(fdf_calc)
+    # Cálculo: deduplicación global
+    fdf_calc = deduplicate(fdf_calc, by_class=False)
+    # Visualizaciones: deduplicación por CLASE
+    fdf_vis_dedup = deduplicate(fdf_vis, by_class=True)
+else:
+    fdf_vis_dedup = fdf_vis
 
 # ================== φ / λ para artículos (PPC) ==================
 def phi_base_only(row):
@@ -243,7 +253,7 @@ if aplicar_intercultural and n_ppc_total > 0:
 
 ppc = float(ppc_rows["lambda"].sum())
 
-# PPA
+# PPA (arte)
 ppa = float(fdf_calc["CLASE_NORM"].eq("ARTE_INT").sum())*1.0 + float(fdf_calc["CLASE_NORM"].eq("ARTE_NAC").sum())*0.9
 
 # LCL (libros + capítulos)
@@ -294,6 +304,7 @@ c6.metric("PMT", f"{int(PMT_sum)}")
 c7.metric("IIPA", f"{iipa:.3f}" if not np.isnan(iipa) else "—")
 
 st.caption(f"Periodo (cálculo): {sorted(set(year_calc_sel))} | Año denominador: {denom_year} | Deduplicación: {'Sí' if dedup else 'No'}")
+st.caption(f"Visualización deduplicada por CLASE: {'Sí' if dedup else 'No'}")
 st.caption(f"LCL = LIBROS ({int(libros)}) + CAPÍTULOS ({'1/TOTAL_CAPITULOS' if usar_total_caps else f'factor fijo = {factor_cap:.2f}'}).")
 if aplicar_intercultural:
     st.caption(f"Interculturalidad aplicada a {n_aplicados} de {n_ppc_total} artículos PPC ({pct_aplicado:.1f}% del total; tope 21%).")
@@ -302,13 +313,13 @@ else:
 
 # ================== Visualización (paleta verde) ==================
 st.divider()
-st.subheader("Exploración de publicaciones")
+st.subheader("Exploración de publicaciones (deduplicación por CLASE activa)")
 
 palette_verde = ["#004D40", "#00796B", "#2E7D32", "#66BB6A", "#A5D6A7"]
 color_scale = alt.Scale(range=palette_verde)
 
 # --- Publicaciones por año ---
-by_year = fdf_vis.groupby("AÑO").size().reset_index(name="Publicaciones")
+by_year = fdf_vis_dedup.groupby("AÑO").size().reset_index(name="Publicaciones")
 bars_year = (
     alt.Chart(by_year).mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5)
     .encode(
@@ -325,7 +336,7 @@ labels_year = (
 st.altair_chart(bars_year + labels_year, use_container_width=True)
 
 # --- Tendencia por facultad ---
-by_fac_trend = fdf_vis.groupby(["AÑO","FACULTAD"]).size().reset_index(name="Publicaciones")
+by_fac_trend = fdf_vis_dedup.groupby(["AÑO","FACULTAD"]).size().reset_index(name="Publicaciones")
 highlight = alt.selection_point(on="mouseover", fields=["FACULTAD"], nearest=True, empty=False)
 line_fac = (
     alt.Chart(by_fac_trend)
@@ -338,14 +349,14 @@ line_fac = (
         tooltip=["FACULTAD","AÑO","Publicaciones"]
     )
     .add_params(highlight)
-    .properties(title="Tendencia por facultad")
+    .properties(title="Tendencia por facultad (deduplicada por CLASE)")
     .configure_axis(grid=True, gridColor="#e0e0e0")
     .configure_view(strokeWidth=0)
 )
 st.altair_chart(line_fac, use_container_width=True)
 
 # --- Composición relativa por facultad ---
-by_fac = fdf_vis.groupby(["AÑO","FACULTAD"]).size().reset_index(name="Publicaciones")
+by_fac = fdf_vis_dedup.groupby(["AÑO","FACULTAD"]).size().reset_index(name="Publicaciones")
 stacked = (
     alt.Chart(by_fac)
     .mark_bar()
@@ -354,7 +365,7 @@ stacked = (
         y=alt.Y("sum(Publicaciones):Q", stack="normalize", title="Proporción dentro del año"),
         color=alt.Color("AÑO:O", title="Año", scale=color_scale),
         tooltip=["AÑO","FACULTAD","Publicaciones"]
-    ).properties(title="Composición relativa por Facultad")
+    ).properties(title="Composición relativa por Facultad (deduplicada por CLASE)")
 )
 st.altair_chart(stacked, use_container_width=True)
 
@@ -392,7 +403,7 @@ def map_tipo_agregado(row):
 
     return None
 
-vis_tipo = fdf_vis.copy()
+vis_tipo = fdf_vis_dedup.copy()
 vis_tipo["TIPO_AGREGADO"] = vis_tipo.apply(map_tipo_agregado, axis=1)
 vis_tipo = vis_tipo.dropna(subset=["TIPO_AGREGADO"])
 
@@ -421,13 +432,13 @@ chart_tipo = (
                         scale=alt.Scale(range=palette_verde + ["#B2DFDB", "#81C784"])),
         tooltip=["AÑO", "TIPO_AGREGADO", "Publicaciones"]
     )
-    .properties(title="Producción por tipo de salida")
+    .properties(title="Producción por tipo de salida (deduplicada por CLASE)")
 )
 st.altair_chart(chart_tipo, use_container_width=True)
 
 # --- Heatmap de cuartiles (escala verde) ---
-fdf_vis["_CU"] = fdf_vis["CUARTIL"].fillna("SIN CUARTIL").str.upper().str.strip()
-by_cu = fdf_vis.groupby(["AÑO","_CU"]).size().reset_index(name="Publicaciones")
+fdf_vis_dedup["_CU"] = fdf_vis_dedup["CUARTIL"].fillna("SIN CUARTIL").str.upper().str.strip()
+by_cu = fdf_vis_dedup.groupby(["AÑO","_CU"]).size().reset_index(name="Publicaciones")
 heat = (
     alt.Chart(by_cu)
     .mark_rect(stroke="white", strokeWidth=0.5)
@@ -437,7 +448,7 @@ heat = (
         color=alt.Color("Publicaciones:Q", title="N.º de publicaciones", scale=alt.Scale(scheme="greens")),
         tooltip=["AÑO","_CU","Publicaciones"]
     )
-    .properties(title="Intensidad por cuartil y año (Heatmap — escala verde)")
+    .properties(title="Intensidad por cuartil y año (Heatmap — deduplicada por CLASE)")
 )
 st.altair_chart(heat, use_container_width=True)
 
@@ -483,8 +494,9 @@ if not ppc_rows.empty:
 
 st.divider()
 st.caption(
-    "Notas: (1) Proceedings cuentan en PPC solo si están indexados (Scopus/WoS) o con cuartil. "
-    "(2) LCL: libros ponderan 1; capítulos ponderan 1/TOTAL_CAPITULOS si se activa; de lo contrario, factor fijo. "
-    "(3) Interculturalidad: opción de +0.21 aplicada hasta el 21% del total de artículos PPC (sin usar columnas del Excel). "
-    "(4) Use deduplicación para evitar doble conteo por coautorías."
+    "Notas: (1) Procede deduplicación global en cálculo y por CLASE en visualización. "
+    "(2) Proceedings cuentan en PPC solo si están indexados (Scopus/WoS) o con cuartil. "
+    "(3) LCL: libros ponderan 1; capítulos ponderan 1/TOTAL_CAPITULOS si se activa; de lo contrario, factor fijo. "
+    "(4) Interculturalidad: opción de +0.21 aplicada hasta el 21% del total de artículos PPC (sin usar columnas del Excel). "
+    "(5) Use deduplicación para evitar doble conteo por coautorías."
 )
