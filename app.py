@@ -340,6 +340,113 @@ stacked = (
 
 st.altair_chart(stacked, use_container_width=True)
 
+# ================== Producción por tipo (libros, capítulos, proceedings, artículos por base) ==================
+
+# Paleta institucional (use la ya definida si existe)
+try:
+    palette_verde
+except NameError:
+    palette_verde = ["#004D40", "#00796B", "#2E7D32", "#66BB6A", "#A5D6A7"]
+
+def _norm(s):
+    s = "" if pd.isna(s) else str(s)
+    s = s.strip().upper()
+    return s
+
+def map_tipo_agregado(row):
+    clase = _norm(row.get("CLASE_NORM", ""))
+    idx   = _norm(row.get("INDEXACIÓN", ""))
+    cu    = _norm(row.get("CUARTIL", ""))
+
+    # 1) Libros y capítulos
+    if clase == "LIBRO":
+        return "Libros"
+    if clase == "CAPITULO":
+        return "Capítulos de libros"
+
+    # 2) Proceedings en Scopus (solo los proceedings con SCOPUS)
+    if clase == "PROCEEDINGS":
+       if "SCOPUS" in idx or "WOS" in idx or "WEB OF SCIENCE" in idx:
+    return "Conference proceedings (indexados)" 
+        else:
+            # Proceedings fuera de Scopus (no los incluimos en las 6 categorías solicitadas)
+            return None
+
+    # 3) Solo artículos para las siguientes categorías
+    if clase != "ARTICULO":
+        return None
+
+    # Artículos en Latindex Catálogo
+    if "LATINDEX" in idx:
+        return "Artículos en Latindex Catálogo"
+
+    # Artículos en bases de impacto (Scopus / WoS o cuartil Q1–Q4)
+    if cu in {"Q1", "Q2", "Q3", "Q4"} or "SCOPUS" in idx or "WOS" in idx or "WEB OF SCIENCE" in idx:
+        return "Artículos en bases de impacto"
+
+    # Artículos en bases regionales (indexadas distintas de Scopus/WoS/Latindex)
+    if idx not in ("", "NO REGISTRADO", "NAN"):
+        return "Artículos en bases regionales"
+
+    # Si no calza en nada, no lo mostramos en este gráfico
+    return None
+
+# Construir dataset agregado
+vis_tipo = fdf_vis.copy()
+vis_tipo["TIPO_AGREGADO"] = vis_tipo.apply(map_tipo_agregado, axis=1)
+vis_tipo = vis_tipo.dropna(subset=["TIPO_AGREGADO"])
+
+prod_tipo_year = (
+    vis_tipo.groupby(["AÑO", "TIPO_AGREGADO"])
+    .size()
+    .reset_index(name="Publicaciones")
+    .sort_values(["AÑO", "TIPO_AGREGADO"])
+)
+
+# Orden consistente de las categorías en la leyenda
+orden_categorias = [
+    "Libros",
+    "Capítulos de libros",
+    "Conference proceedings en Scopus",
+    "Artículos en bases de impacto",
+    "Artículos en bases regionales",
+    "Artículos en Latindex Catálogo",
+]
+
+# Gráfico: barras apiladas por año
+chart_tipo = (
+    alt.Chart(prod_tipo_year)
+    .mark_bar()
+    .encode(
+        x=alt.X("AÑO:O", title="Año"),
+        y=alt.Y("sum(Publicaciones):Q", title="N.º de publicaciones"),
+        color=alt.Color(
+            "TIPO_AGREGADO:N",
+            title="Tipo",
+            sort=orden_categorias,
+            scale=alt.Scale(range=palette_verde + ["#B2DFDB", "#81C784"])  # extiende si hiciera falta
+        ),
+        tooltip=["AÑO", "TIPO_AGREGADO", "Publicaciones"]
+    )
+    .properties(title="Producción por tipo de salida")
+)
+
+# Etiquetas de valor encima de cada segmento (opcional, puede comentar si hay muchas categorías/años)
+labels_tipo = (
+    alt.Chart(prod_tipo_year)
+    .mark_text(dy=-5, fontWeight="bold", color="#1B5E20")
+    .encode(
+        x="AÑO:O",
+        y=alt.Y("sum(Publicaciones):Q"),
+        detail="TIPO_AGREGADO:N",
+        text=alt.Text("sum(Publicaciones):Q", format=".0f")
+    )
+)
+
+st.altair_chart(chart_tipo, use_container_width=True)
+# Si desea etiquetas totales por columna (en la parte superior), descomente la línea siguiente:
+# st.altair_chart(chart_tipo + labels_tipo, use_container_width=True)
+
 
 # Heatmap de cuartiles (versión con colores vivos)
 fdf_vis["_CU"] = fdf_vis["CUARTIL"].fillna("SIN CUARTIL").str.upper().str.strip()
