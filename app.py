@@ -291,15 +291,31 @@ stacked = alt.Chart(by_fac).mark_bar().encode(
 ).properties(title="Composición relativa por facultad (porcentaje)")
 st.altair_chart(stacked, use_container_width=True)
 
+# Heatmap de cuartiles (versión con colores vivos)
 fdf_vis["_CU"] = fdf_vis["CUARTIL"].fillna("SIN CUARTIL").str.upper().str.strip()
 by_cu = fdf_vis.groupby(["AÑO","_CU"]).size().reset_index(name="Publicaciones")
-heat = alt.Chart(by_cu).mark_rect().encode(
-    x=alt.X("AÑO:O", title="Año"),
-    y=alt.Y("_CU:N", title="Cuartil / Calidad"),
-    color=alt.Color("Publicaciones:Q", title="N.º de publicaciones"),
-    tooltip=["AÑO","_CU","Publicaciones"]
-).properties(title="Intensidad por cuartil y año (heatmap)")
+
+# Nueva paleta verde-amarilla con mayor contraste
+color_scale = alt.Scale(
+    domain=[by_cu["Publicaciones"].min(), by_cu["Publicaciones"].max()],
+    scheme="yellowgreenblue"  # puede probar "greens", "viridis" o "yellowgreenblue"
+)
+
+heat = (
+    alt.Chart(by_cu)
+    .mark_rect(stroke="white", strokeWidth=0.5)
+    .encode(
+        x=alt.X("AÑO:O", title="Año"),
+        y=alt.Y("_CU:N", title="Cuartil / Calidad"),
+        color=alt.Color("Publicaciones:Q", title="N.º de publicaciones", scale=color_scale),
+        tooltip=["AÑO", "_CU", "Publicaciones"]
+    )
+    .properties(
+        title="Intensidad por cuartil y año (Heatmap — escala verde brillante)"
+    )
+)
 st.altair_chart(heat, use_container_width=True)
+
 
 # Velocímetro
 meta_caces = 1.5
