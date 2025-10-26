@@ -1,35 +1,12 @@
+
 import os
-import streamlit as st
-
-# ============ Configuración de OpenAI ============
-USE_SDK_V1 = True
-client = None
-openai = None
-
-api_key = os.getenv("OPENAI_API_KEY")
-
-try:
-    from openai import OpenAI  # SDK >= 1.0
-    if api_key:
-        client = OpenAI(api_key=api_key)
-except Exception:
-    USE_SDK_V1 = False
-    try:
-        import openai  # SDK < 1.0
-        if api_key:
-            openai.api_key = api_key
-    except Exception:
-        openai = None
 import pandas as pd
 import numpy as np
 import streamlit as st
 import altair as alt
+import plotly.graph_objects as go
 
-
-
-# ============ Config general ============
-
-st.set_page_config(page_title="IP — Dashboard", layout="wide")
+st.set_page_config(page_title="IIPA — Dashboard", layout="wide")
 st.markdown("""
 <style>
 html, body, [class*="css"]  {
@@ -38,19 +15,16 @@ html, body, [class*="css"]  {
 </style>
 """, unsafe_allow_html=True)
 
-
 st.title("Índice de Producción Académica per cápita (IIPA)")
 st.caption("""
 IIPA = (PPC + PPA + LCL + PPI) / (PTC + 0.5·PMT).
-Incluye mapeo de CLASE, separación de años de visualización vs. cálculo, deduplicación por DOI/Título y componente intercultural (tope λ≤1).
+Incluye mapeo de CLASE, separación de años de visualización vs. cálculo,
+deduplicación por DOI/Título y componente intercultural con tope λ≤1 y límite del 21% de artículos.
 """)
 
-
-# ============ Carga de datos de publicaciones ============
 def load_pubs(uploaded_file=None):
     if uploaded_file is not None:
         return pd.read_excel(uploaded_file)
-    # Fallback: si existe "Libro2.xlsx" junto a este archivo
     example_path = os.path.join(os.path.dirname(__file__), "Libro2.xlsx")
     if os.path.exists(example_path):
         try:
@@ -66,51 +40,27 @@ if df.empty:
     st.info("No hay datos. Suba su Excel o coloque 'Libro2.xlsx' junto a este archivo.")
     st.stop()
 
-# Normalización de encabezados
 df.columns = [str(c).strip().upper() for c in df.columns]
 
-# Asegurar columnas mínimas
-for col in ["AÑO","FACULTAD","CARRERA","TIPO","PUBLICACIÓN","REVISTA","FECHA","DOI","URL","CUARTIL","INDEXACIÓN","INTERCULTURAL","CLASE","SEDE"]:
+for col in ["AÑO","FACULTAD","CARRERA","SEDE","TIPO","PUBLICACIÓN","REVISTA","FECHA","DOI","URL","CUARTIL","INDEXACIÓN","INTERCULTURAL","CLASE"]:
     if col not in df.columns:
         df[col] = np.nan
-# Columna opcional para conteo de capítulos por libro
 if "TOTAL_CAPITULOS" not in df.columns:
     df["TOTAL_CAPITULOS"] = np.nan
 
-# Tipos y fechas
 df["AÑO"] = pd.to_numeric(df["AÑO"], errors="coerce").astype("Int64")
 if "FECHA" in df.columns:
     df["FECHA"] = pd.to_datetime(df["FECHA"], errors="coerce")
 
-# ============ Normalización robusta de CLASE ============
 CLASE_MAP = {
-    # Artículos científicos
-    "ARTICULO": "ARTICULO",
-    "ARTÍCULO": "ARTICULO",
-    "ARTICULO_CIENTIFICO": "ARTICULO",
-    "ARTICLE": "ARTICULO",
-    # Proceedings (actas)
-    "PROCEEDINGS": "PROCEEDINGS",
-    "CONFERENCE_PAPER": "PROCEEDINGS",
-    "PAPER CONGRESO": "PROCEEDINGS",
-    # Libros y capítulos
-    "LIBRO": "LIBRO",
-    "BOOK": "LIBRO",
-    "CAPITULO": "CAPITULO",
-    "CAPÍTULO": "CAPITULO",
-    "BOOK_CHAPTER": "CAPITULO",
-    # Propiedad intelectual aplicada
-    "PROPIEDAD_INTELECTUAL": "PPI",
-    "PATENTE": "PPI",
-    "REGISTRO": "PPI",
-    "SOFTWARE REGISTRADO": "PPI",
-    # Producción artística
-    "PRODUCCION_ARTISTICA_INTERNACIONAL": "ARTE_INT",
-    "PRODUCCIÓN_ARTÍSTICA_INTERNACIONAL": "ARTE_INT",
-    "PRODUCCION_ARTISTICA_NACIONAL": "ARTE_NAC",
-    "PRODUCCIÓN_ARTÍSTICA_NACIONAL": "ARTE_NAC",
+    "ARTICULO": "ARTICULO", "ARTÍCULO": "ARTICULO", "ARTICULO_CIENTIFICO": "ARTICULO", "ARTICLE": "ARTICULO",
+    "PROCEEDINGS": "PROCEEDINGS", "CONFERENCE_PAPER": "PROCEEDINGS", "PAPER CONGRESO": "PROCEEDINGS",
+    "LIBRO": "LIBRO", "BOOK": "LIBRO",
+    "CAPITULO": "CAPITULO", "CAPÍTULO": "CAPITULO", "BOOK_CHAPTER": "CAPITULO",
+    "PROPIEDAD_INTELECTUAL": "PPI", "PATENTE": "PPI", "REGISTRO": "PPI", "SOFTWARE REGISTRADO": "PPI",
+    "PRODUCCION_ARTISTICA_INTERNACIONAL": "ARTE_INT", "PRODUCCIÓN_ARTÍSTICA_INTERNACIONAL": "ARTE_INT",
+    "PRODUCCION_ARTISTICA_NACIONAL": "ARTE_NAC", "PRODUCCIÓN_ARTÍSTICA_NACIONAL": "ARTE_NAC",
 }
-
 KEYWORDS = {
     "proceedings": ["proceedings", "conference", "congreso", "actas"],
     "libro": ["libro", "book"],
@@ -119,7 +69,6 @@ KEYWORDS = {
     "arte_int": ["artistica internacional", "exhibicion internacional", "premio internacional"],
     "arte_nac": ["artistica nacional", "evento nacional", "premio nacional"],
 }
-
 def _norm_text(x: str) -> str:
     x = "" if pd.isna(x) else str(x)
     x = x.strip().lower()
@@ -127,48 +76,29 @@ def _norm_text(x: str) -> str:
     return x
 
 def normalize_clase(row) -> str:
-    # 1) Mapeo directo por CLASE
     clase_raw = _norm_text(row.get("CLASE",""))
     if clase_raw:
-        # Intente match exacto contra el diccionario (sin acentos)
         for k, v in CLASE_MAP.items():
             if _norm_text(k) == clase_raw:
                 return v
-    # 2) Heurísticas por TIPO/INDEXACIÓN/CUARTIL
     tipo = _norm_text(row.get("TIPO",""))
     idx  = _norm_text(row.get("INDEXACIÓN",""))
     cu   = _norm_text(row.get("CUARTIL",""))
-
-    # Proceedings
-    if any(w in tipo for w in KEYWORDS["proceedings"]):
-        return "PROCEEDINGS"
-    # Libros / capítulos
-    if any(w in tipo for w in KEYWORDS["libro"]):
-        return "LIBRO"
-    if any(w in tipo for w in KEYWORDS["capitulo"]):
-        return "CAPITULO"
-    # PPI
-    if any(w in tipo for w in KEYWORDS["ppi"]):
-        return "PPI"
-    # Arte
-    if any(w in tipo for w in KEYWORDS["arte_int"]):
-        return "ARTE_INT"
-    if any(w in tipo for w in KEYWORDS["arte_nac"]):
-        return "ARTE_NAC"
-    # Artículo científico por calidad/indexación
-    if cu in {"q1","q2","q3","q4"} or any(s in idx for s in ["scopus","wos","web of science","latindex"]):
-        return "ARTICULO"
-    if "articulo" in tipo or "artículo" in tipo:
-        return "ARTICULO"
+    if any(w in tipo for w in KEYWORDS["proceedings"]): return "PROCEEDINGS"
+    if any(w in tipo for w in KEYWORDS["libro"]): return "LIBRO"
+    if any(w in tipo for w in KEYWORDS["capitulo"]): return "CAPITULO"
+    if any(w in tipo for w in KEYWORDS["ppi"]): return "PPI"
+    if any(w in tipo for w in KEYWORDS["arte_int"]): return "ARTE_INT"
+    if any(w in tipo for w in KEYWORDS["arte_nac"]): return "ARTE_NAC"
+    if cu in {"q1","q2","q3","q4"} or any(s in idx for s in ["scopus","wos","web of science","latindex"]): return "ARTICULO"
+    if "articulo" in tipo or "artículo" in tipo: return "ARTICULO"
     return "OTRO"
 
 if "CLASE_NORM" not in df.columns:
     df["CLASE_NORM"] = df.apply(normalize_clase, axis=1)
 else:
-    # Asegurar consistencia si ya viene cargada
     df["CLASE_NORM"] = df["CLASE_NORM"].astype(str).str.upper().str.strip()
 
-# ============ Parámetros y filtros ============
 years_all = sorted([int(y) for y in df["AÑO"].dropna().unique()])
 current_year = pd.Timestamp.today().year
 default_vis = [y for y in years_all if y >= current_year-3] or years_all
@@ -181,24 +111,20 @@ with st.sidebar:
     tipo_sel = st.multiselect("Tipo de publicación", sorted(df["TIPO"].dropna().unique()), default=sorted(df["TIPO"].dropna().unique()))
     sede_sel = st.multiselect("Sede", sorted(df["SEDE"].dropna().unique()), default=sorted(df["SEDE"].dropna().unique()))
 
-
     st.divider()
     st.header("Cálculo del IIPA")
     year_calc_sel = st.multiselect("Años del periodo (3 años concluidos)", years_all, default=default_vis)
     denom_year = st.selectbox("Año denominador (PTC + 0.5·PMT)", sorted(year_calc_sel) if year_calc_sel else years_all, index=len(sorted(year_calc_sel))-1 if year_calc_sel else (len(years_all)-1 if years_all else 0))
     dedup = st.checkbox("Deduplicar por DOI/Título (recomendado)", value=True)
+
     st.subheader("Parámetros LCL (libros y capítulos)")
     usar_total_caps = st.checkbox("Usar TOTAL_CAPITULOS si existe (peso = 1/TOTAL_CAPITULOS)", value=False)
-    factor_cap = st.number_input(
-    "Factor fijo por capítulo (si no hay TOTAL_CAPITULOS)",
-    min_value=0.1, max_value=1.0, value=0.25, step=0.05
-    )
+    factor_cap = st.number_input("Factor fijo por capítulo (si no hay TOTAL_CAPITULOS)", min_value=0.1, max_value=1.0, value=0.25, step=0.05)
 
     st.subheader("Interculturalidad (para artículos)")
     intercultural_from_col = st.checkbox("Usar columna INTERCULTURAL (True/1) si existe", value=False)
     intercultural_inc = st.slider("Incremento por artículo (0 a 0.21)", min_value=0.0, max_value=0.21, value=0.21, step=0.01)
 
-# Denominador — personal académico
 st.sidebar.header("Personal académico (denominador)")
 uploaded_staff = st.sidebar.file_uploader("Excel de personal (AÑO, FACULTAD, PTC, PMT)", type=["xlsx"], key="staff")
 ptc_manual = st.sidebar.number_input("PTC (manual si no sube Excel)", min_value=0, value=0, step=1)
@@ -216,10 +142,8 @@ def apply_filters(base, years, fac, car, tipo, sede):
 fdf_vis  = apply_filters(df, year_vis_sel, fac_sel, car_sel, tipo_sel, sede_sel)
 fdf_calc = apply_filters(df, year_calc_sel, fac_sel, car_sel, tipo_sel, sede_sel)
 
-# Deduplicación por DOI/Título
 def deduplicate(df_in):
-    if df_in.empty:
-        return df_in
+    if df_in.empty: return df_in
     d = df_in.copy()
     d["_DOI"] = d["DOI"].fillna("").astype(str).str.strip().str.lower()
     d["_TIT"] = d["PUBLICACIÓN"].fillna("").astype(str).str.strip().str.lower()
@@ -229,71 +153,69 @@ def deduplicate(df_in):
 if dedup:
     fdf_calc = deduplicate(fdf_calc)
 
-# ============ φ / λ para artículos (PPC) ============
-def infer_phi(row):
+def phi_base_only(row):
     cu = str(row.get("CUARTIL", "")).upper().strip()
     idx = str(row.get("INDEXACIÓN", "")).upper().strip()
-    # φ base por calidad
-    if cu == "Q1": phi = 1.0
-    elif cu == "Q2": phi = 0.9
-    elif cu == "Q3": phi = 0.8
-    elif cu == "Q4": phi = 0.7
+    if   cu == "Q1": return 1.0
+    elif cu == "Q2": return 0.9
+    elif cu == "Q3": return 0.8
+    elif cu == "Q4": return 0.7
     else:
         if ("SCOPUS" in idx or "WOS" in idx or "WEB OF SCIENCE" in idx):
-            phi = 0.6  # A
+            return 0.6
         elif "LATINDEX" in idx:
-            phi = 0.2  # L
+            return 0.2
         elif idx not in ("", "NO REGISTRADO", "NAN"):
-            phi = 0.5  # B (regionales)
+            return 0.5
         else:
-            phi = 0.0
-    # interculturalidad opcional (+0.21, tope 1)
-    inc = 0.0
-    if intercultural_from_col and "INTERCULTURAL" in row.index:
-        val = str(row.get("INTERCULTURAL","")).strip().lower()
-        if val in ("1","true","sí","si","y","yes"):
-            inc = intercultural_inc
-    lam = min(1.0, phi + inc)
-    return lam
+            return 0.0
 
-# ============ Cálculo de componentes IIPA ============
-# PPC: ARTICULO + PROCEEDINGS (solo indexados/cuatril)
 is_article = fdf_calc["CLASE_NORM"].eq("ARTICULO")
 is_proc = fdf_calc["CLASE_NORM"].eq("PROCEEDINGS") & (
     fdf_calc["INDEXACIÓN"].str.contains("SCOPUS|WOS|WEB OF SCIENCE", case=False, na=True) |
     fdf_calc["CUARTIL"].str.contains("Q[1-4]", case=False, na=True)
 )
 is_ppc = is_article | is_proc
-ppc = fdf_calc.loc[is_ppc].apply(infer_phi, axis=1).sum()
 
-# PPA: arte internacional (1.0) + nacional (0.9)
+ppc_rows = fdf_calc.loc[is_ppc].copy()
+ppc_rows["phi_base"] = ppc_rows.apply(phi_base_only, axis=1)
+n_ppc_total = int(len(ppc_rows))
+
+if intercultural_from_col and n_ppc_total > 0:
+    elig = ppc_rows["INTERCULTURAL"].astype(str).str.strip().str.lower().isin({"1","true","sí","si","y","yes"})
+else:
+    elig = pd.Series(False, index=ppc_rows.index)
+
+n_limit = int(np.floor(0.21 * n_ppc_total))
+ppc_rows["gain"] = np.minimum(1.0, ppc_rows["phi_base"] + intercultural_inc) - ppc_rows["phi_base"]
+cands = ppc_rows[elig & (ppc_rows["gain"] > 0)].copy().sort_values("gain", ascending=False)
+to_apply_idx = cands.index[:n_limit]
+
+ppc_rows["lambda"] = ppc_rows["phi_base"]
+ppc_rows.loc[to_apply_idx, "lambda"] = np.minimum(1.0, ppc_rows.loc[to_apply_idx, "phi_base"] + intercultural_inc)
+
+n_aplicados = int(len(to_apply_idx))
+pct_aplicado = (n_aplicados / n_ppc_total * 100.0) if n_ppc_total > 0 else 0.0
+ppc = float(ppc_rows["lambda"].sum())
+
 ppa = float(fdf_calc["CLASE_NORM"].eq("ARTE_INT").sum())*1.0 + float(fdf_calc["CLASE_NORM"].eq("ARTE_NAC").sum())*0.9
 
-# LCL: libros + capítulos (con opción de ponderar capítulos)
 mask_libro = fdf_calc["CLASE_NORM"].eq("LIBRO")
 mask_cap   = fdf_calc["CLASE_NORM"].eq("CAPITULO")
-
 libros = float(mask_libro.sum())
 
 if usar_total_caps:
-    # Pesar cada capítulo como 1 / TOTAL_CAPITULOS; si falta o es inválido, usar factor fijo
     caps_df = fdf_calc.loc[mask_cap].copy()
     caps_df["_den"] = pd.to_numeric(caps_df["TOTAL_CAPITULOS"], errors="coerce")
     caps_df["_w"]   = 1.0 / caps_df["_den"]
     caps = caps_df["_w"].where(~caps_df["_w"].isna() & np.isfinite(caps_df["_w"]), other=float(factor_cap)).sum()
 else:
-    # Sin TOTAL_CAPITULOS: contar capítulos con un factor fijo
     caps = float(mask_cap.sum()) * float(factor_cap)
-
 lcl = libros + caps
 
-
-# PPI: propiedad intelectual aplicada
 ppi = float(fdf_calc["CLASE_NORM"].eq("PPI").sum())
-
 numerador_total = ppc + ppa + lcl + ppi
 
-# ============ Denominador: PTC + 0.5·PMT (año denominador) ============
 def get_denominator():
     if uploaded_staff is not None:
         s = pd.read_excel(uploaded_staff)
@@ -310,7 +232,6 @@ def get_denominator():
 den, PTC_sum, PMT_sum = get_denominator()
 iipa = (numerador_total / den) if den > 0 else np.nan
 
-# ============ KPIs ============
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("PPC (artículos ponderados)", f"{ppc:.2f}")
 c2.metric("PPA (artística)", f"{ppa:.2f}")
@@ -322,46 +243,28 @@ c5.metric("PTC", f"{int(PTC_sum)}")
 c6.metric("PMT", f"{int(PMT_sum)}")
 c7.metric("IIPA", f"{iipa:.3f}" if not np.isnan(iipa) else "—")
 
-st.caption(f"Periodo (años cálculo): {sorted(set(year_calc_sel))} | Año denominador: {denom_year} | Deduplicación: {'Sí' if dedup else 'No'}")
-st.caption(
-    f"LCL = LIBROS ({int(libros)}) + CAPÍTULOS ("
-    f"{'1/TOTAL_CAPITULOS' if usar_total_caps else f'factor fijo = {factor_cap:.2f}'})."
-)
+st.caption(f"Periodo (cálculo): {sorted(set(year_calc_sel))} | Año denominador: {denom_year} | Deduplicación: {'Sí' if dedup else 'No'}")
+st.caption(f"LCL = LIBROS ({int(libros)}) + CAPÍTULOS ({'1/TOTAL_CAPITULOS' if usar_total_caps else f'factor fijo = {factor_cap:.2f}'}).")
+st.caption(f"Interculturalidad aplicada a {n_aplicados} de {n_ppc_total} artículos PPC ({pct_aplicado:.1f}%, tope 21%).")
 
-
-# ============ Visualización (sobre fdf_vis) ============
 st.divider()
 st.subheader("Exploración de publicaciones (visualización)")
-# Paleta (puede cambiar "goldgreen" por otra: 'viridis', 'blues', 'redblue', etc.)
-color_scale = alt.Scale(scheme="tableau10")  # Alternativas: "category10", "dark2", "set2"
-
+color_scale = alt.Scale(scheme="tableau10")
 
 by_year = fdf_vis.groupby("AÑO").size().reset_index(name="Publicaciones")
-
 bars_year = alt.Chart(by_year).mark_bar().encode(
     x=alt.X("AÑO:O", title="Año"),
     y=alt.Y("Publicaciones:Q", title="N.º de publicaciones"),
     tooltip=["AÑO","Publicaciones"],
-    color=alt.value("#2E7D32")  # color fijo (verde) o use color_scale
+    color=alt.value("#2E7D32")
 )
+labels_year = alt.Chart(by_year).mark_text(align="center", baseline="bottom", dy=-5).encode(
+    x="AÑO:O", y="Publicaciones:Q", text="Publicaciones:Q"
+)
+st.altair_chart((bars_year + labels_year).properties(title="Publicaciones por año"), use_container_width=True)
 
-labels_year = alt.Chart(by_year).mark_text(
-    align="center", baseline="bottom", dy=-5
-).encode(
-    x="AÑO:O",
-    y="Publicaciones:Q",
-    text="Publicaciones:Q"
-)
-
-st.altair_chart(
-    (bars_year + labels_year).properties(title="Publicaciones por año"),
-    use_container_width=True
-)
-# ======= Gráfico de tendencia por facultad (versión mejorada) =======
 by_fac_trend = fdf_vis.groupby(["AÑO","FACULTAD"]).size().reset_index(name="Publicaciones")
-
 highlight = alt.selection_point(on="mouseover", fields=["FACULTAD"], nearest=True, empty=False)
-
 line_fac = alt.Chart(by_fac_trend).mark_line(
     point=alt.OverlayMarkDef(filled=True, size=80, stroke="black", strokeWidth=0.5),
     strokeWidth=3
@@ -371,155 +274,70 @@ line_fac = alt.Chart(by_fac_trend).mark_line(
     color=alt.Color("FACULTAD:N", title="Facultad", scale=color_scale),
     opacity=alt.condition(highlight, alt.value(1.0), alt.value(0.2)),
     tooltip=["FACULTAD","AÑO","Publicaciones"]
-).add_params(highlight).properties(
-    title="Tendencia por facultad (resalte con el ratón)"
-).configure_axis(
-    grid=True,
-    gridColor="#e0e0e0"
-).configure_view(
-    strokeWidth=0
-)
-
+).add_params(highlight).properties(title="Tendencia por facultad (resalte con el ratón)").configure_axis(grid=True, gridColor="#e0e0e0").configure_view(strokeWidth=0)
 st.altair_chart(line_fac, use_container_width=True)
 
-
-
 by_fac = fdf_vis.groupby(["AÑO","FACULTAD"]).size().reset_index(name="Publicaciones")
-
 stacked = alt.Chart(by_fac).mark_bar().encode(
     x=alt.X("FACULTAD:N", title="Facultad"),
     y=alt.Y("sum(Publicaciones):Q", stack="normalize", title="Proporción dentro del año"),
     color=alt.Color("AÑO:O", scale=color_scale),
     tooltip=["AÑO","FACULTAD","Publicaciones"]
 ).properties(title="Composición relativa por facultad (porcentaje)")
-
 st.altair_chart(stacked, use_container_width=True)
-
 
 fdf_vis["_CU"] = fdf_vis["CUARTIL"].fillna("SIN CUARTIL").str.upper().str.strip()
 by_cu = fdf_vis.groupby(["AÑO","_CU"]).size().reset_index(name="Publicaciones")
-
 heat = alt.Chart(by_cu).mark_rect().encode(
     x=alt.X("AÑO:O", title="Año"),
     y=alt.Y("_CU:N", title="Cuartil / Calidad"),
     color=alt.Color("Publicaciones:Q", title="N.º de publicaciones"),
     tooltip=["AÑO","_CU","Publicaciones"]
 ).properties(title="Intensidad por cuartil y año (heatmap)")
-
 st.altair_chart(heat, use_container_width=True)
 
-# ======= Progreso hacia la meta CACES =======
 meta_caces = 1.5
 avance = float(0 if np.isnan(iipa) else iipa)
-progreso = min(1.0, avance / meta_caces)
+max_gauge = 2.0
+if avance < 0.5: estado = "Deficiente"
+elif avance < 1.0: estado = "Poco satisfactorio"
+elif avance < 1.5: estado = "Cuasi satisfactorio"
+else: estado = "Satisfactorio"
 
-# Mostrar barra de progreso estándar
-st.caption("Progreso hacia la meta CACES (IP ≥ 1.5)")
-st.progress(progreso)
+steps = [
+    {"range": [0.0, 0.5], "color": "#E57373"},
+    {"range": [0.5, 1.0], "color": "#FBC02D"},
+    {"range": [1.0, 1.5], "color": "#FFD54F"},
+    {"range": [1.5, max_gauge], "color": "#66BB6A"}
+]
 
-# Determinar color según avance
-if avance >= meta_caces:
-    color = "#2E7D32"   # Verde (cumple o supera)
-elif avance >= meta_caces * 0.75:
-    color = "#F9A825"   # Amarillo (avance intermedio)
-else:
-    color = "#C62828"   # Rojo (bajo)
+fig = go.Figure(go.Indicator(
+    mode = "gauge+number+delta",
+    value = avance,
+    number = {"valueformat": ".2f"},
+    delta = {"reference": meta_caces, "increasing": {"color": "#2E7D32"}, "decreasing": {"color": "#C62828"}},
+    gauge = {
+        "axis": {"range": [0, max_gauge]},
+        "bar": {"color": "#455A64"},
+        "steps": steps,
+        "threshold": {"line": {"color": "#2E7D32", "width": 4}, "thickness": 0.75, "value": meta_caces}
+    },
+    title = {"text": f"IIPA — {estado} (meta 1.5)", "font": {"size": 16}}
+))
+st.plotly_chart(fig, use_container_width=True)
 
-# Mostrar etiqueta central con color dinámico
-st.markdown(
-    f"""
-    <div style='text-align:center; font-size:16px; font-weight:600;
-                color:{color}; margin-top:4px;'>
-        Avance: {avance:.2f} / {meta_caces:.2f}  ({progreso*100:.1f}%)
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
-
-# Detalle de artículos del periodo de cálculo (λ)
-is_ppc_rows = fdf_calc[is_ppc]
-if not is_ppc_rows.empty:
-    detail = is_ppc_rows[["AÑO","FACULTAD","CARRERA","PUBLICACIÓN","REVISTA","CUARTIL","INDEXACIÓN","INTERCULTURAL","CLASE_NORM"]].copy()
-    # φ base solo para referencia (sin incremento intercultural)
-    def phi_base(row):
-        cu = str(row.get("CUARTIL", "")).upper().strip()
-        idx = str(row.get("INDEXACIÓN", "")).upper().strip()
-        if cu == "Q1": return 1.0
-        if cu == "Q2": return 0.9
-        if cu == "Q3": return 0.8
-        if cu == "Q4": return 0.7
-        if ("SCOPUS" in idx or "WOS" in idx or "WEB OF SCIENCE" in idx): return 0.6
-        if "LATINDEX" in idx: return 0.2
-        if idx not in ("", "NO REGISTRADO", "NAN"): return 0.5
-        return 0.0
-    detail["φ (impacto)"] = detail.apply(phi_base, axis=1)
-    detail["λ (φ + intercultural, tope 1)"] = is_ppc_rows.apply(infer_phi, axis=1).values
-    st.subheader("Detalle de PPC (artículos/proceedings) en el periodo de cálculo")
+if not ppc_rows.empty:
+    detail = ppc_rows[["AÑO","SEDE","FACULTAD","CARRERA","PUBLICACIÓN","REVISTA","CUARTIL",
+                       "INDEXACIÓN","INTERCULTURAL","phi_base","lambda"]].copy()
+    detail = detail.rename(columns={"phi_base":"φ (impacto)", "lambda":"λ (final)"})
+    detail["INTERCULTURAL_APLICADA"] = detail["λ (final)"] > detail["φ (impacto)"]
+    st.subheader("Detalle de PPC (φ base y λ final)")
     st.dataframe(detail, use_container_width=True)
 
 st.divider()
-
 st.caption(
     "Notas: (1) Proceedings cuentan en PPC solo si están indexados (Scopus/WoS) o con cuartil. "
-    "(2) LCL: libros ponderan 1; capítulos ponderan 1/TOTAL_CAPITULOS si se activa y existe la columna; "
-    f"en caso contrario capítulos ponderan un factor fijo configurable (actual: {factor_cap:.2f}). "
-    "(3) Interculturalidad: +0.21 por artículo marcado, tope λ≤1. "
+    "(2) LCL: libros ponderan 1; capítulos ponderan 1/TOTAL_CAPITULOS si se activa; de lo contrario, factor fijo. "
+    "(3) Interculturalidad: +0.21 tope λ≤1 con límite del 21% de los artículos PPC. "
     "(4) Use deduplicación para evitar doble conteo por coautorías."
 )
-
-
-
-# ============ Consultas en lenguaje natural (IA) ============
-st.divider()
-st.subheader("Consultas en lenguaje natural (IA)")
-
-# Construir contexto
-contexto = {
-    "Periodo": list(sorted(set(year_calc_sel))),
-    "Denominador": {
-        "Año": int(denom_year),
-        "PTC": int(PTC_sum),
-        "PMT": int(PMT_sum),
-        "Valor": float(den) if den > 0 else None,
-    },
-    "Componentes": {
-        "PPC": float(ppc),
-        "PPA": float(ppa),
-        "LCL": float(lcl),
-        "PPI": float(ppi),
-    },
-    "IIPA": float(iipa) if not np.isnan(iipa) else None,
-}
-
-question = st.text_input("Ejemplo: ¿El IIPA supera 1.5 en el periodo seleccionado?")
-
-if st.button("Preguntar a la IA") and question:
-    if USE_SDK_V1 and client:
-        try:
-            resp = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "Eres analista institucional. Responde con precisión usando solo el contexto dado."},
-                    {"role": "user", "content": f"Pregunta: {question}\n\nContexto: {contexto}"}
-                ],
-                temperature=0.1
-            )
-            st.success(resp.choices[0].message.content)
-        except Exception as e:
-            st.error(f"Error (SDK v1): {e}")
-    elif (not USE_SDK_V1) and openai:
-        try:
-            resp = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "Eres analista institucional. Responde con precisión usando solo el contexto dado."},
-                    {"role": "user", "content": f"Pregunta: {question}\n\nContexto: {contexto}"}
-                ],
-                temperature=0.1
-            )
-            st.success(resp["choices"][0]["message"]["content"])
-        except Exception as e:
-            st.error(f"Error (SDK legacy): {e}")
-    else:
-        st.error("No se detecta OPENAI_API_KEY o el paquete openai. Revise 'Secrets' y requirements.")
