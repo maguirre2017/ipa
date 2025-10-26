@@ -271,7 +271,7 @@ else:
 
 # ================== Visualización institucional (verdes) ==================
 st.divider()
-st.subheader("Exploración de publicaciones (visualización)")
+st.subheader("Exploración de publicaciones")
 
 # Paleta institucional — verdes armónicos elegantes
 palette_verde = ["#004D40", "#00796B", "#2E7D32", "#66BB6A", "#A5D6A7"]
@@ -289,7 +289,7 @@ bars_year = (
         tooltip=["AÑO", "Publicaciones"],
         color=alt.Color("AÑO:O", scale=color_scale, legend=None)
     )
-    .properties(title="Publicaciones por año — Tonos institucionales")
+    .properties(title="Publicaciones por año")
 )
 
 labels_year = (
@@ -316,7 +316,7 @@ line_fac = (
         tooltip=["FACULTAD", "AÑO", "Publicaciones"]
     )
     .add_params(highlight)
-    .properties(title="Tendencia por facultad (verdes institucionales)")
+    .properties(title="Tendencia por facultad")
     .configure_axis(grid=True, gridColor="#e0e0e0")
     .configure_view(strokeWidth=0)
 )
@@ -335,7 +335,7 @@ stacked = (
         color=alt.Color("AÑO:O", title="Año", scale=color_scale),
         tooltip=["AÑO", "FACULTAD", "Publicaciones"]
     )
-    .properties(title="Composición relativa por facultad (paleta verde)")
+    .properties(title="Composición relativa por Facultad")
 )
 
 st.altair_chart(stacked, use_container_width=True)
