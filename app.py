@@ -14,8 +14,8 @@ html, body, [class*="css"]  {
 }
 </style>
 """, unsafe_allow_html=True)
-
-st.title("Índice de Producción Académica per cápita (IIPA)")
+st.title("INSTITUTO DE INVESTIGACIÓN (IP)")
+st.title("Índice de Producción Académica per cápita (IP)")
 st.caption("""
 IIPA = (PPC + PPA + LCL + PPI) / (PTC + 0.5·PMT).
 Incluye mapeo de CLASE, filtros por sede/facultad/carrera, separación de años de visualización vs. cálculo,
