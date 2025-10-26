@@ -14,7 +14,7 @@ html, body, [class*="css"]  {
 }
 </style>
 """, unsafe_allow_html=True)
-
+st.title("INSTITUTO DE INVESTIGACIÓN")
 st.title("Índice de Producción Académica per cápita (IIPA)")
 st.caption("""
 IIPA = (PPC + PPA + LCL + PPI) / (PTC + 0.5·PMT).
