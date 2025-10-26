@@ -298,7 +298,7 @@ by_cu = fdf_vis.groupby(["AÑO","_CU"]).size().reset_index(name="Publicaciones")
 # Nueva paleta verde-amarilla con mayor contraste
 color_scale = alt.Scale(
     domain=[by_cu["Publicaciones"].min(), by_cu["Publicaciones"].max()],
-    scheme="viridis"  # puede probar "greens", "viridis" o "yellowgreenblue"
+    scheme="greens"  # puede probar "greens", "viridis" o "yellowgreenblue"
 )
 
 heat = (
