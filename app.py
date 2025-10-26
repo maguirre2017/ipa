@@ -14,13 +14,31 @@ html, body, [class*="css"]  {
 }
 </style>
 """, unsafe_allow_html=True)
-st.title("INSTITUTO DE INVESTIGACIÓN (IP)")
-st.title("Índice de Producción Académica per cápita (IP)")
+# ================== Encabezado con logo ==================
+logo_path = "logo_uagraria.png"  # nombre del archivo del logo (debe estar junto a app.py)
+
+# Verificar si el logo existe antes de mostrarlo
+if os.path.exists(logo_path):
+    st.markdown(
+        f"""
+        <div style='display:flex; align-items:center; gap:15px;'>
+            <img src='{logo_path}' width='80'>
+             st.title("INSTITUTO DE INVESTIGACIÓN")
+            <h1 style='margin-bottom:0;'>Índice de Producción Académica per cápita (IP)</h1>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+else:
+  st.title("INSTITUTO DE INVESTIGACIÓN")
+  st.title("Índice de Producción Académica per cápita (IP)")
+
 st.caption("""
-IIPA = (PPC + PPA + LCL + PPI) / (PTC + 0.5·PMT).
-Incluye mapeo de CLASE, filtros por sede/facultad/carrera, separación de años de visualización vs. cálculo,
+IP = (PPC + PPA + LCL + PPI) / (PTC + 0.5·PMT).  
+Incluye mapeo de CLASE, filtros por sede/facultad/carrera, separación de años de visualización vs. cálculo,  
 deduplicación por DOI/Título, LCL configurable, y componente intercultural con tope λ≤1.
 """)
+
 
 def load_pubs(uploaded_file=None):
     if uploaded_file is not None:
@@ -321,9 +339,9 @@ st.altair_chart(heat, use_container_width=True)
 meta_caces = 1.5
 avance = float(0 if np.isnan(iipa) else iipa)
 max_gauge = 2.0
-if avance < 0.5: estado = "Deficiente"
-elif avance < 1.0: estado = "Poco satisfactorio"
-elif avance < 1.5: estado = "Cuasi satisfactorio"
+if avance < 0.495: estado = "Deficiente"
+elif avance < 0.98: estado = "Poco satisfactorio"
+elif avance < 1.45: estado = "Cuasi satisfactorio"
 else: estado = "Satisfactorio"
 
 steps = [
