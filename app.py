@@ -364,13 +364,12 @@ def map_tipo_agregado(row):
     if clase == "CAPITULO":
         return "Capítulos de libros"
 
-    # 2) Proceedings en Scopus (solo los proceedings con SCOPUS)
+    # 2) Proceedings (Scopus o WoS)
     if clase == "PROCEEDINGS":
-       if "SCOPUS" in idx or "WOS" in idx or "WEB OF SCIENCE" in idx:
-    return "Conference proceedings (indexados)" 
+        if "SCOPUS" in idx or "WOS" in idx or "WEB OF SCIENCE" in idx:
+            return "Conference proceedings (indexados)"
         else:
-            # Proceedings fuera de Scopus (no los incluimos en las 6 categorías solicitadas)
-            return None
+            return None  # proceedings no indexados no se incluyen
 
     # 3) Solo artículos para las siguientes categorías
     if clase != "ARTICULO":
@@ -390,6 +389,7 @@ def map_tipo_agregado(row):
 
     # Si no calza en nada, no lo mostramos en este gráfico
     return None
+
 
 # Construir dataset agregado
 vis_tipo = fdf_vis.copy()
