@@ -365,7 +365,7 @@ stacked = (
         y=alt.Y("sum(Publicaciones):Q", stack="normalize", title="Proporción dentro del año"),
         color=alt.Color("AÑO:O", title="Año", scale=color_scale),
         tooltip=["AÑO","FACULTAD","Publicaciones"]
-    ).properties(title="Composición relativa por Facultad")
+    ).properties(title="Distribución proporcional de publicaciones por Facultad")
 )
 st.altair_chart(stacked, use_container_width=True)
 
@@ -432,7 +432,7 @@ chart_tipo = (
                         scale=alt.Scale(range=palette_verde + ["#B2DFDB", "#81C784"])),
         tooltip=["AÑO", "TIPO_AGREGADO", "Publicaciones"]
     )
-    .properties(title="Producción académica por tipo")
+    .properties(title="Distribución de la producción académica por tipo de publicación")
 )
 st.altair_chart(chart_tipo, use_container_width=True)
 
@@ -494,9 +494,9 @@ if not ppc_rows.empty:
 
 st.divider()
 st.caption(
-    "Notas: (1) Procede deduplicación global en cálculo y por CLASE en visualización. "
-    "(2) Proceedings cuentan en PPC solo si están indexados (Scopus/WoS) o con cuartil. "
-    "(3) LCL: libros ponderan 1; capítulos ponderan 1/TOTAL_CAPITULOS si se activa; de lo contrario, factor fijo. "
-    "(4) Interculturalidad: opción de +0.21 aplicada hasta el 21% del total de artículos PPC (sin usar columnas del Excel). "
-    "(5) Use deduplicación para evitar doble conteo por coautorías."
+    "Notas: Consideraciones tomadas en cuenta "
+    "(1) Proceedings cuentan en PPC solo si están indexados (Scopus/WoS). "
+    "(2) LCL: libros ponderan 1; capítulos ponderan 1/TOTAL_CAPITULOS si se activa; de lo contrario, factor fijo. "
+    "(3) Interculturalidad: opción de +0.21 aplicada hasta el 21% del total de artículos PPC. "
+    "(4) Se ha utilizado deduplicación para evitar doble conteo por coautorías."
 )
