@@ -448,7 +448,7 @@ heat = (
         color=alt.Color("Publicaciones:Q", title="N.º de publicaciones", scale=alt.Scale(scheme="greens")),
         tooltip=["AÑO","_CU","Publicaciones"]
     )
-    .properties(title="Intensidad por cuartil y año (Heatmap — deduplicada por CLASE)")
+    .properties(title="Heatmap de productividad científica por cuartil y año")
 )
 st.altair_chart(heat, use_container_width=True)
 
@@ -456,9 +456,9 @@ st.altair_chart(heat, use_container_width=True)
 meta_caces = 1.5
 avance = float(0 if np.isnan(iipa) else iipa)
 max_gauge = 2.0
-if avance < 0.5: estado = "Deficiente"
-elif avance < 1.0: estado = "Poco satisfactorio"
-elif avance < 1.5: estado = "Cuasi satisfactorio"
+if avance < 0.495: estado = "Deficiente"
+elif avance < 0.98: estado = "Poco satisfactorio"
+elif avance < 1.45: estado = "Cuasi satisfactorio"
 else: estado = "Satisfactorio"
 
 steps = [
