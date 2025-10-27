@@ -349,7 +349,7 @@ line_fac = (
         tooltip=["FACULTAD","AÑO","Publicaciones"]
     )
     .add_params(highlight)
-    .properties(title="Tendencia por facultad")
+    .properties(title="Evolución temporal de la producción por facultad")
     .configure_axis(grid=True, gridColor="#e0e0e0")
     .configure_view(strokeWidth=0)
 )
@@ -479,7 +479,7 @@ fig = go.Figure(go.Indicator(
         "steps": steps,
         "threshold": {"line": {"color": "#2E7D32", "width": 4}, "thickness": 0.75, "value": meta_caces}
     },
-    title = {"text": f"IIPA — {estado} (meta 1.5)", "font": {"size": 16}}
+    title = {"text": f"IP: {estado} (meta 1.5)", "font": {"size": 16}}
 ))
 st.plotly_chart(fig, use_container_width=True)
 
