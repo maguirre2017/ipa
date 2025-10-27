@@ -22,7 +22,7 @@ if os.path.exists(logo_path):
             <img src='{logo_path}' width='80' alt='Logo'>
             <div>
                 <h2 style='margin:0; font-weight:600;'>INSTITUTO DE INVESTIGACIÓN</h2>
-                <h1 style='margin:0;'>Índice de Producción Académica per cápita (IIPA)</h1>
+                <h1 style='margin:0;'>Índice de Producción Académica per cápita (IP)</h1>
             </div>
         </div>
         """,
@@ -30,7 +30,7 @@ if os.path.exists(logo_path):
     )
 else:
     st.markdown("<h2 style='margin:0;'>INSTITUTO DE INVESTIGACIÓN</h2>", unsafe_allow_html=True)
-    st.title("Índice de Producción Académica per cápita (IIPA)")
+    st.title("Índice de Producción Académica per cápita (IP)")
 
 st.caption("""
 IIPA = (PPC + PPA + LCL + PPI) / (PTC + 0.5·PMT).
@@ -313,13 +313,13 @@ else:
 
 # ================== Visualización (paleta verde) ==================
 st.divider()
-st.subheader("Exploración de publicaciones (deduplicación por CLASE activa)")
+st.subheader("Exploración de publicaciones")
 
 palette_verde = ["#004D40", "#00796B", "#2E7D32", "#66BB6A", "#A5D6A7"]
 color_scale = alt.Scale(range=palette_verde)
 
 # --- Publicaciones por año ---
-by_year = fdf_vis_dedup.groupby("AÑO").size().reset_index(name="Publicaciones")
+by_year = fdf_vis_dedup.groupby("AÑO").size().reset_index(name="Total de Publicaciones por año")
 bars_year = (
     alt.Chart(by_year).mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5)
     .encode(
@@ -349,7 +349,7 @@ line_fac = (
         tooltip=["FACULTAD","AÑO","Publicaciones"]
     )
     .add_params(highlight)
-    .properties(title="Tendencia por facultad (deduplicada por CLASE)")
+    .properties(title="Tendencia por facultad")
     .configure_axis(grid=True, gridColor="#e0e0e0")
     .configure_view(strokeWidth=0)
 )
@@ -365,7 +365,7 @@ stacked = (
         y=alt.Y("sum(Publicaciones):Q", stack="normalize", title="Proporción dentro del año"),
         color=alt.Color("AÑO:O", title="Año", scale=color_scale),
         tooltip=["AÑO","FACULTAD","Publicaciones"]
-    ).properties(title="Composición relativa por Facultad (deduplicada por CLASE)")
+    ).properties(title="Composición relativa por Facultad")
 )
 st.altair_chart(stacked, use_container_width=True)
 
@@ -432,7 +432,7 @@ chart_tipo = (
                         scale=alt.Scale(range=palette_verde + ["#B2DFDB", "#81C784"])),
         tooltip=["AÑO", "TIPO_AGREGADO", "Publicaciones"]
     )
-    .properties(title="Producción por tipo de salida (deduplicada por CLASE)")
+    .properties(title="Producción académica por tipo")
 )
 st.altair_chart(chart_tipo, use_container_width=True)
 
@@ -448,7 +448,7 @@ heat = (
         color=alt.Color("Publicaciones:Q", title="N.º de publicaciones", scale=alt.Scale(scheme="greens")),
         tooltip=["AÑO","_CU","Publicaciones"]
     )
-    .properties(title="Intensidad por cuartil y año (Heatmap — deduplicada por CLASE)")
+    .properties(title="Intensidad por cuartil y año")
 )
 st.altair_chart(heat, use_container_width=True)
 
@@ -479,7 +479,7 @@ fig = go.Figure(go.Indicator(
         "steps": steps,
         "threshold": {"line": {"color": "#2E7D32", "width": 4}, "thickness": 0.75, "value": meta_caces}
     },
-    title = {"text": f"IIPA — {estado} (meta 1.5)", "font": {"size": 16}}
+    title = {"text": f"IP — {estado} (meta 1.5)", "font": {"size": 16}}
 ))
 st.plotly_chart(fig, use_container_width=True)
 
