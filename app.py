@@ -22,7 +22,7 @@ if os.path.exists(logo_path):
             <img src='{logo_path}' width='80' alt='Logo'>
             <div>
                 <h2 style='margin:0; font-weight:600;'>INSTITUTO DE INVESTIGACIÓN</h2>
-                <h1 style='margin:0;'>Índice de Producción Académica per cápita (IIPA)</h1>
+                <h1 style='margin:0;'>Índice de Producción Académica (IP)</h1>
             </div>
         </div>
         """,
@@ -30,7 +30,7 @@ if os.path.exists(logo_path):
     )
 else:
     st.markdown("<h2 style='margin:0;'>INSTITUTO DE INVESTIGACIÓN</h2>", unsafe_allow_html=True)
-    st.title("Índice de Producción Académica per cápita (IIPA)")
+    st.title("Índice de Producción Académica (IP)")
 
 st.caption("""
 IIPA = (PPC + PPA + LCL + PPI) / (PTC + 0.5·PMT).
@@ -313,7 +313,7 @@ else:
 
 # ================== Visualización (paleta verde) ==================
 st.divider()
-st.subheader("Exploración de publicaciones (deduplicación por CLASE activa)")
+st.subheader("Exploración de publicaciones")
 
 palette_verde = ["#004D40", "#00796B", "#2E7D32", "#66BB6A", "#A5D6A7"]
 color_scale = alt.Scale(range=palette_verde)
