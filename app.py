@@ -349,7 +349,7 @@ line_fac = (
         tooltip=["FACULTAD","AÑO","Publicaciones"]
     )
     .add_params(highlight)
-    .properties(title="Tendencia por facultad (deduplicada por CLASE)")
+    .properties(title="Tendencia por facultad")
     .configure_axis(grid=True, gridColor="#e0e0e0")
     .configure_view(strokeWidth=0)
 )
@@ -365,7 +365,7 @@ stacked = (
         y=alt.Y("sum(Publicaciones):Q", stack="normalize", title="Proporción dentro del año"),
         color=alt.Color("AÑO:O", title="Año", scale=color_scale),
         tooltip=["AÑO","FACULTAD","Publicaciones"]
-    ).properties(title="Composición relativa por Facultad (deduplicada por CLASE)")
+    ).properties(title="Composición relativa por Facultad")
 )
 st.altair_chart(stacked, use_container_width=True)
 
@@ -432,7 +432,7 @@ chart_tipo = (
                         scale=alt.Scale(range=palette_verde + ["#B2DFDB", "#81C784"])),
         tooltip=["AÑO", "TIPO_AGREGADO", "Publicaciones"]
     )
-    .properties(title="Producción por tipo de salida (deduplicada por CLASE)")
+    .properties(title="Producción académica por tipo")
 )
 st.altair_chart(chart_tipo, use_container_width=True)
 
