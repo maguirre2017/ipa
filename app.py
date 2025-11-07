@@ -432,24 +432,70 @@ heat = (
 )
 st.altair_chart(heat, use_container_width=True)
 
-# -------- NUEVO: Tipo de publicación por Facultad (CLASE_NORM) --------
-by_fac_class = vis.groupby(["FACULTAD","CLASE_NORM"]).size().reset_index(name="Publicaciones")
-# Orden sugerido de clases para lectura consistente
-class_order = ["ARTICULO","PROCEEDINGS","LIBRO","CAPITULO","PPI","ARTE_INT","ARTE_NAC","OTRO"]
-by_fac_class["CLASE_NORM"] = pd.Categorical(by_fac_class["CLASE_NORM"], categories=class_order, ordered=True)
+# -------- NUEVO: Tipo de publicación por Facultad (categorías solicitadas) --------
+def _class_pub_for_fac(row):
+    clase = str(row.get("CLASE_NORM", "")).upper().strip()
+    cu    = str(row.get("CUARTIL", "")).upper().strip()
+    idx   = str(row.get("INDEXACIÓN", "")).upper().strip()
+
+    # Libros (excluir capítulos)
+    if clase == "LIBRO":
+        return "Libros"
+
+    # Proceedings en Scopus
+    if clase == "PROCEEDINGS" and "SCOPUS" in idx:
+        return "Proceedings en Scopus"
+
+    # Artículos por calidad / base
+    if clase == "ARTICULO":
+        # Bases de impacto: Q1–Q4 o WoS/Scopus
+        if cu in {"Q1", "Q2", "Q3", "Q4"} or ("SCOPUS" in idx or "WOS" in idx or "WEB OF SCIENCE" in idx):
+            return "Artículos en bases de impacto"
+        # Latindex Catálogo
+        if "LATINDEX" in idx:
+            return "Artículos Latindex Catálogo"
+        # Otras bases regionales (distintas de Scopus/WoS/Latindex), si hay alguna indexación
+        if idx not in ("", "NO REGISTRADO", "NAN"):
+            return "Artículos Bases Regionales"
+
+    # Todo lo demás: no se grafica en este panel
+    return None
+
+vis_cat = vis.copy()
+vis_cat["CATEGORIA_FAC"] = vis_cat.apply(_class_pub_for_fac, axis=1)
+vis_cat = vis_cat.dropna(subset=["CATEGORIA_FAC"])
+
+# Orden consistente de categorías
+cat_order = [
+    "Artículos en bases de impacto",
+    "Artículos Latindex Catálogo",
+    "Artículos Bases Regionales",
+    "Libros",
+    "Proceedings en Scopus",
+]
+vis_cat["CATEGORIA_FAC"] = pd.Categorical(vis_cat["CATEGORIA_FAC"], categories=cat_order, ordered=True)
+
+# Agregación
+by_fac_cat = vis_cat.groupby(["FACULTAD","CATEGORIA_FAC"]).size().reset_index(name="Publicaciones")
+
+# Paleta de verdes profesional
+cat_colors = ["#1B5E20", "#2E7D32", "#43A047", "#66BB6A", "#81C784"]
 
 chart_type_fac = (
-    alt.Chart(by_fac_class)
+    alt.Chart(by_fac_cat)
       .mark_bar()
       .encode(
           x=alt.X("FACULTAD:N", title="Facultad"),
           y=alt.Y("sum(Publicaciones):Q", title="N.º de publicaciones"),
-          color=alt.Color("CLASE_NORM:N", title="Tipo de publicación", scale=green_scale),
-          tooltip=["FACULTAD","CLASE_NORM","Publicaciones"]
+          color=alt.Color("CATEGORIA_FAC:N", title="Tipo de publicación",
+                          scale=alt.Scale(domain=cat_order, range=cat_colors)),
+          tooltip=["FACULTAD","CATEGORIA_FAC","Publicaciones"]
       )
-      .properties(title="Tipo de publicación por Facultad (CLASE_NORM)")
+      .properties(title="Tipo de publicación por Facultad")
 )
+
 st.altair_chart(chart_type_fac, use_container_width=True)
+
 
 # ------------------ Tabla final filtrable ------------------
 st.subheader("Tabla de publicaciones consideradas (primer autor)")
