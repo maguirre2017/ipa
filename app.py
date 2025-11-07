@@ -84,7 +84,7 @@ df = _cols_upper(df)
 for col in [
     "AÑO","SEDE","FACULTAD","CARRERA","TIPO","PUBLICACIÓN","REVISTA","FECHA",
     "DOI","URL","CUARTIL","INDEXACIÓN","CLASE","TOTAL_CAPITULOS",
-    "AUTORES","DOCENTE","DOCENTES","AUTOR", "TIPO DE VINCULACIÓN"
+    "NOMBRES","AUTORES","DOCENTE","DOCENTES","AUTOR", "TIPO DE VINCULACIÓN"
 ]:
     if col not in df.columns:
         df[col] = np.nan
@@ -135,18 +135,29 @@ def normalize_clase(row):
 df["CLASE_NORM"] = df.apply(normalize_clase, axis=1)
 
 # ------------------ Primer autor + deduplicación ------------------
-autor_cols = ["DOCENTES","DOCENTE","AUTORES","AUTOR","INVESTIGADORES","INVESTIGADOR"]
+# Priorizar NOMBRES; si hay listas en otras columnas, extraer primero.
+autor_cols = ["NOMBRES", "DOCENTES", "DOCENTE", "AUTORES", "AUTOR", "INVESTIGADORES", "INVESTIGADOR"]
 col_autores = next((c for c in autor_cols if c in df.columns), None)
 
 def split_first_author(s: str) -> str:
-    if pd.isna(s): return ""
-    s = str(s)
-    s = re.sub(r"\s+y\s+", ",", s, flags=re.IGNORECASE)
-    parts = re.split(r"[;,/|&]+", s)
+    """Devuelve el primer autor. Si es un solo nombre (caso típico de NOMBRES), lo devuelve tal cual."""
+    if pd.isna(s):
+        return ""
+    s = str(s).strip()
+    if not s:
+        return ""
+    # Si viene listado tipo "Apellido, Nombre; Otro…" o "… y …", normalizar separadores
+    s_norm = re.sub(r"\s+y\s+", ",", s, flags=re.IGNORECASE)
+    parts = re.split(r"[;,/|&]+", s_norm)
+    # Si no parece lista, devolver tal cual (caso NOMBRES con un solo docente)
+    if len(parts) <= 1:
+        return " ".join(s.split())
+    # Extraer el primer elemento no vacío de la lista
     for p in parts:
         t = " ".join(p.strip().split())
-        if t: return t
-    return ""
+        if t:
+            return t
+    return " ".join(s.split())
 
 df["_DOI"] = df["DOI"].fillna("").astype(str).str.strip().str.lower()
 df["_TIT"] = df["PUBLICACIÓN"].fillna("").astype(str).str.strip().str.lower()
@@ -161,7 +172,7 @@ df = (df.sort_values(by=["PRIMER_AUTOR"], ascending=True)
         .copy())
 
 # ------------------ VINCULACIÓN desde "TIPO DE VINCULACIÓN" ------------------
-# Se toma directamente del libro (sin hoja adicional). Se normaliza a NOMBRAMIENTO/OCASIONAL/SIN VINCULACION.
+# Se normaliza a NOMBRAMIENTO/OCASIONAL/SIN VINCULACION.
 def map_vinc(s: str) -> str:
     s = _norm_txt(s)
     if s in ("NOMBRAMIENTO","OCASIONAL"):
@@ -370,6 +381,9 @@ vis = vis[vis["CARRERA"].isin(car_sel)]  if car_sel else vis
 vis = vis[vis["TIPO"].isin(tipo_sel)]    if tipo_sel else vis
 vis = vis[vis["SEDE"].isin(sede_sel)]    if sede_sel else vis
 
+# Paleta de verdes institucionales para categorías
+green_scale = alt.Scale(range=["#1B5E20", "#2E7D32", "#43A047", "#66BB6A", "#81C784", "#A5D6A7", "#C8E6C9"])
+
 # Publicaciones por año (apilado por vinculación)
 by_year_vinc = vis.groupby(["AÑO","VINCULACION_PUB"]).size().reset_index(name="Publicaciones")
 chart_year = (
@@ -418,6 +432,25 @@ heat = (
 )
 st.altair_chart(heat, use_container_width=True)
 
+# -------- NUEVO: Tipo de publicación por Facultad (CLASE_NORM) --------
+by_fac_class = vis.groupby(["FACULTAD","CLASE_NORM"]).size().reset_index(name="Publicaciones")
+# Orden sugerido de clases para lectura consistente
+class_order = ["ARTICULO","PROCEEDINGS","LIBRO","CAPITULO","PPI","ARTE_INT","ARTE_NAC","OTRO"]
+by_fac_class["CLASE_NORM"] = pd.Categorical(by_fac_class["CLASE_NORM"], categories=class_order, ordered=True)
+
+chart_type_fac = (
+    alt.Chart(by_fac_class)
+      .mark_bar()
+      .encode(
+          x=alt.X("FACULTAD:N", title="Facultad"),
+          y=alt.Y("sum(Publicaciones):Q", title="N.º de publicaciones"),
+          color=alt.Color("CLASE_NORM:N", title="Tipo de publicación", scale=green_scale),
+          tooltip=["FACULTAD","CLASE_NORM","Publicaciones"]
+      )
+      .properties(title="Tipo de publicación por Facultad (CLASE_NORM)")
+)
+st.altair_chart(chart_type_fac, use_container_width=True)
+
 # ------------------ Tabla final filtrable ------------------
 st.subheader("Tabla de publicaciones consideradas (primer autor)")
 year_tab = st.multiselect("Año (tabla)", years_all, default=year_vis_sel or years_all, key="tab_years")
@@ -450,6 +483,7 @@ if not calc_all_for_detail.empty:
     st.dataframe(detail, use_container_width=True)
 else:
     st.info("No hay artículos/proceedings en el periodo de cálculo para mostrar detalle.")
+
 
 
 
