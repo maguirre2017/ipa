@@ -134,42 +134,121 @@ def normalize_clase(row):
 
 df["CLASE_NORM"] = df.apply(normalize_clase, axis=1)
 
-# ------------------ Primer autor + deduplicación ------------------
-# Priorizar NOMBRES; si hay listas en otras columnas, extraer primero.
+# ------------------ Primer autor + deduplicación (canónica por publicación) ------------------
+import re
+
+# 1) Normalizadores robustos (incluyen ñ)
+def _norm_txt_upper(x: str) -> str:
+    x = "" if pd.isna(x) else str(x)
+    x = x.strip().upper()
+    x = (x.replace("Á","A").replace("É","E").replace("Í","I")
+           .replace("Ó","O").replace("Ú","U").replace("Ñ","N"))
+    x = " ".join(x.split())
+    return x
+
+def _norm_txt_lower(x: str) -> str:
+    x = "" if pd.isna(x) else str(x)
+    x = x.strip().lower()
+    x = (x.replace("á","a").replace("é","e").replace("í","i")
+           .replace("ó","o").replace("ú","u").replace("ñ","n"))
+    x = " ".join(x.split())
+    return x
+
+# 2) Columnas posibles de autores
 autor_cols = ["NOMBRES", "DOCENTES", "DOCENTE", "AUTORES", "AUTOR", "INVESTIGADORES", "INVESTIGADOR"]
 col_autores = next((c for c in autor_cols if c in df.columns), None)
 
 def split_first_author(s: str) -> str:
-    """Devuelve el primer autor. Si es un solo nombre (caso típico de NOMBRES), lo devuelve tal cual."""
+    """Devuelve el primer autor de una cadena (si hay lista) o el nombre tal cual si no parece lista."""
     if pd.isna(s):
         return ""
     s = str(s).strip()
     if not s:
         return ""
-    # Si viene listado tipo "Apellido, Nombre; Otro…" o "… y …", normalizar separadores
+    # Normalizar separadores de listas: ; , / | & y ' y '
     s_norm = re.sub(r"\s+y\s+", ",", s, flags=re.IGNORECASE)
     parts = re.split(r"[;,/|&]+", s_norm)
-    # Si no parece lista, devolver tal cual (caso NOMBRES con un solo docente)
     if len(parts) <= 1:
-        return " ".join(s.split())
-    # Extraer el primer elemento no vacío de la lista
+        return " ".join(s.split())  # caso NOMBRES con un solo docente
     for p in parts:
         t = " ".join(p.strip().split())
         if t:
             return t
     return " ".join(s.split())
 
+# 3) Claves de publicación
 df["_DOI"] = df["DOI"].fillna("").astype(str).str.strip().str.lower()
 df["_TIT"] = df["PUBLICACIÓN"].fillna("").astype(str).str.strip().str.lower()
-df["_KEY"] = np.where(df["_DOI"]!="", "doi:"+df["_DOI"], "tit:"+df["_TIT"])
+df["_KEY"] = np.where(df["_DOI"] != "", "doi:" + df["_DOI"], "tit:" + df["_TIT"])
 
-df["PRIMER_AUTOR"] = df[col_autores].map(split_first_author) if col_autores else ""
-df["PRIMER_AUTOR_NORM"] = df["PRIMER_AUTOR"].map(_norm_txt)
+# 4) Primer autor por fila (prioriza NOMBRES si existe)
+if col_autores:
+    df["PRIMER_AUTOR"] = df[col_autores].map(split_first_author)
+else:
+    df["PRIMER_AUTOR"] = ""
 
-# Regla: la publicación deduplicada se atribuye al PRIMER AUTOR
-df = (df.sort_values(by=["PRIMER_AUTOR"], ascending=True)
-        .drop_duplicates(subset=["_KEY"], keep="first")
-        .copy())
+df["PRIMER_AUTOR_NORM"] = df["PRIMER_AUTOR"].map(_norm_txt_upper)
+
+# 5) Guardar orden original del Excel para desempates
+df["_ORD"] = np.arange(len(df))
+
+# 6) Construir PRIMER AUTOR CANÓNICO por publicación (del primer campo de lista disponible)
+#    Intentamos encontrar una "lista de autores" dentro del grupo; si no hay, usamos el PRIMER_AUTOR más frecuente.
+def pick_authors_list(series: pd.Series) -> str:
+    # primera cadena que parezca lista (>1 autor)
+    for s in series.dropna():
+        s = str(s).strip()
+        if re.search(r"[;,/|&]", s) or re.search(r"\s+y\s+", s, flags=re.IGNORECASE):
+            return s
+    # si no hay listas, devolver la primera no vacía
+    for s in series.dropna():
+        s = str(s).strip()
+        if s:
+            return s
+    return ""
+
+# columnas donde podría estar la lista completa de autores
+list_cols = [c for c in ["AUTORES","DOCENTES","DOCENTE","AUTOR"] if c in df.columns]
+list_cols = (["NOMBRES"] + list_cols) if "NOMBRES" in df.columns else list_cols
+
+# Para rapidez, preconstruimos una columna auxiliar con la "fuente de autores" preferida por fila
+def first_nonempty_row_authors(row):
+    for c in list_cols:
+        val = row.get(c, "")
+        if isinstance(val, str) and val.strip():
+            return val
+    return ""
+
+df["_AUTORES_SRC"] = df.apply(first_nonempty_row_authors, axis=1)
+
+# 7) Selección canónica por grupo (_KEY):
+#    - Si encontramos lista: extraer primer autor canónico y quedarnos con la fila cuyo PRIMER_AUTOR_NORM coincide.
+#    - Si no coincide ninguna, quedarnos con la fila de menor _ORD (primer registro del Excel).
+keep_idx = []
+for key, g in df.groupby("_KEY", sort=False):
+    # si no hay DOI/Título, se trata como grupo único
+    if key in ("", "tit:"):
+        keep_idx.extend(g.index.tolist())
+        continue
+
+    # a) intentar extraer autores canónicos
+    src_list = pick_authors_list(g["_AUTORES_SRC"])
+    canon = split_first_author(src_list)
+    canon_norm = _norm_txt_upper(canon)
+
+    if canon_norm:
+        # filas que coinciden con el primer autor canónico
+        match = g[g["PRIMER_AUTOR_NORM"] == canon_norm]
+        if not match.empty:
+            # si hay varias, tomar la de menor _ORD (primer registro del Excel)
+            keep_idx.append(match.sort_values("_ORD").index[0])
+            continue
+
+    # b) fallback: primer registro original del Excel en el grupo
+    keep_idx.append(g.sort_values("_ORD").index[0])
+
+# 8) Filtrar el DataFrame a las filas canónicas por publicación
+df = df.loc[keep_idx].copy()
 
 # ------------------ VINCULACIÓN desde "TIPO DE VINCULACIÓN" ------------------
 # Se normaliza a NOMBRAMIENTO/OCASIONAL/SIN VINCULACION.
