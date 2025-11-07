@@ -9,7 +9,7 @@ import altair as alt
 import plotly.graph_objects as go
 
 # ------------------ Configuración base ------------------
-st.set_page_config(page_title="IIPA — Dashboard (Libro único)", layout="wide")
+st.set_page_config(page_title="IP — Dashboard (Libro único)", layout="wide")
 st.markdown("""
 <style>
 html, body, [class*="css"]  { font-family: "Inter", system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
@@ -23,7 +23,7 @@ with col_logo:
     if os.path.exists(LOGO):
         st.image(LOGO, width=90)
 with col_title:
-    st.title("Índice de Producción Académica per cápita (IIPA)")
+    st.title("Índice de Producción Académica per cápita (IP)")
 st.caption(
     "Libro Excel único. La cohorte (Nombramiento/Ocasional) se toma de la columna 'TIPO DE VINCULACIÓN'. "
     "Deduplicación por DOI/Título atribuida al primer autor. Interculturalidad hasta 21% (tope λ≤1)."
@@ -330,9 +330,9 @@ iipa_tot = (num_tot / den_tot) if den_tot > 0 else np.nan
 
 # ------------------ KPIs ------------------
 c1, c2, c3 = st.columns(3)
-c1.metric("IP — Nombramiento", f"{iipa_nom:.3f}" if not np.isnan(iipa_nom) else "—",
+c1.metric("IIPA — Nombramiento", f"{iipa_nom:.3f}" if not np.isnan(iipa_nom) else "—",
           help=f"Numerador: {num_nom:.2f} | Den: {den_nom:.2f} | 21% aplicado a {n_ap_nom} artículos.")
-c2.metric("IP — Ocasional", f"{iipa_oca:.3f}" if not np.isnan(iipa_oca) else "—",
+c2.metric("IIPA — Ocasional", f"{iipa_oca:.3f}" if not np.isnan(iipa_oca) else "—",
           help=f"Numerador: {num_oca:.2f} | Den: {den_oca:.2f} | 21% aplicado a {n_ap_oca} artículos.")
 c3.metric("IIPA — Total", f"{iipa_tot:.3f}" if not np.isnan(iipa_tot) else "—",
           help=f"Numerador: {num_tot:.2f} | Den: {den_tot:.2f} | 21% aplicado a {n_ap_tot} artículos.")
