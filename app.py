@@ -373,8 +373,10 @@ def numerador_IIPA(subdf: pd.DataFrame, intercultural_21=True) -> tuple:
     if usar_total_caps:
         caps_df = subdf.loc[mask_cap].copy()
         caps_df["_den"] = pd.to_numeric(caps_df["TOTAL_CAPITULOS"], errors="coerce")
-        caps_df["_w"]   = 1.0 / caps_df["_den"]
-        caps = caps_df["_w"].where(~caps_df["_w"].isna() & np.isfinite(caps_df["_w"]), other=float(factor_cap)).sum()
+        caps_df["_w"] = np.where((caps_df["_den"] > 0) & np.isfinite(caps_df["_den"]),
+                         1.0 / caps_df["_den"],
+                         float("nan"))
+        caps = caps_df["_w"].fillna(float(factor_cap)).sum()
     else:
         caps = float(mask_cap.sum()) * float(factor_cap)
     lcl = libros + caps
@@ -613,7 +615,9 @@ lcl_long = agg.melt("FACULTAD", var_name="Tipo", value_name="n")
 chart_lcl = alt.Chart(lcl_long).mark_bar().encode(
     x=alt.X("FACULTAD:N"),
     y=alt.Y("n:Q", title="Contribución LCL"),
-    color="Tipo:N"
+    color=alt.Color("Tipo:N",
+    scale=alt.Scale(domain=["Libros","Capítulos (pond.)"],
+    range=["#2E7D32","#81C784"]))
 ).properties(title="LCL por Facultad (Libros + Capítulos ponderados)")
 st.altair_chart(chart_lcl, use_container_width=True)
 
@@ -627,10 +631,7 @@ chart_den = alt.Chart(caps_all).mark_boxplot().encode(
 st.altair_chart(chart_den, use_container_width=True)
 
 # auditoría
-audit_caps = caps_all.loc[caps_all["_den"].isna(), ["FACULTAD","TITULO","TOTAL_CAPITULOS"]].head(30)
-if not audit_caps.empty:
-    st.caption("Capítulos sin denominador; se aplica factor_cap.")
-    st.dataframe(audit_caps, use_container_width=True)
+audit_caps = caps_all.loc[caps_all["_den"].isna(), ["FACULTAD","PUBLICACIÓN","TOTAL_CAPITULOS"]].head(30)
 
 # --- tarjeta φ_base (promedio global del subconjunto) ---
 vis_phi = vis.copy()
@@ -695,24 +696,44 @@ with c_ppc:
 chart_ppc = alt.Chart(ppc).mark_bar().encode(
     x=alt.X("FACULTAD:N", title="Facultad"),
     y=alt.Y("count():Q", title="N.º PPC"),
-    color=alt.Color("calidad:N", title="Calidad"),
+    color=alt.Color(
+    "calidad:N",
+    title="Calidad",
+    scale=alt.Scale(
+        domain=["Q1","Q2","Q3","Q4","Scopus/WoS","Otras"],
+        range=["#1B5E20","#2E7D32","#43A047","#66BB6A","#81C784","#A5D6A7"]
+    )
+    ),
     column=alt.Column("tipo:N", title="Tipo"),
     tooltip=["FACULTAD","tipo","calidad","count()"]
 ).properties(title="PPC por Facultad (calidad y tipo)").resolve_scale(y='independent')
 st.altair_chart(chart_ppc, use_container_width=True)
 
 # --- φ_base vs λ (dumbbell/lollipop) ---
+ppc = ppc.reset_index(drop=True).copy()
+ppc["row_id"] = np.arange(len(ppc))
+
 lolli = ppc.melt(
-    id_vars=["FACULTAD","aplica_21"],
+    id_vars=["row_id","FACULTAD","aplica_21"],
     value_vars=["phi_base","lambda"],
-    var_name="metrica", value_name="valor"
+    var_name="metrica",
+    value_name="valor"
 )
-chart_lolli = alt.Chart(lolli).mark_line(point=True).encode(
-    x=alt.X("valor:Q", title="Peso"),
-    y=alt.Y("row_number():O", axis=None),
-    color=alt.Color("aplica_21:N", title="Aplicó 21%"),
-    detail="variable:O"
-).properties(title="Impacto del 21% por publicación (φ_base → λ)")
+
+chart_lolli = (
+    alt.Chart(lolli)
+      .mark_line(point=True)
+      .encode(
+          x=alt.X("valor:Q", title="Peso"),
+          y=alt.Y("row_id:O", axis=None),
+          color=alt.Color("aplica_21:N", title="Aplicó 21%",
+                          scale=alt.Scale(domain=[False, True],
+                                          range=["#A5D6A7","#2E7D32"])),
+          detail="metrica:N",
+          tooltip=["FACULTAD","metrica","valor","aplica_21"]
+      )
+      .properties(title="Impacto del 21% por publicación (φ_base → λ)")
+)
 st.altair_chart(chart_lolli, use_container_width=True)
 
 # --- Top incrementos ---
@@ -720,7 +741,6 @@ top_gain = (ppc.loc[ppc["lambda"].gt(ppc["phi_base"]), ["FACULTAD","phi_base","l
               .assign(gain=lambda d: d["lambda"] - d["phi_base"])
               .sort_values("gain", ascending=False).head(15))
 st.dataframe(top_gain, use_container_width=True)
-
 
 # ------------------ Tabla final filtrable ------------------
 st.subheader("Tabla de publicaciones consideradas (primer autor)")
@@ -754,10 +774,7 @@ if not calc_all_for_detail.empty:
     st.dataframe(detail, use_container_width=True)
 else:
     st.info("No hay artículos/proceedings en el periodo de cálculo para mostrar detalle.")
-
-
-
-
+    
 st.divider()
 st.caption(
     "Notas: Consideraciones tomadas en cuenta "
