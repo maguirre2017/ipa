@@ -724,6 +724,67 @@ if not caps_all.empty:
     if not audit_caps.empty:
         st.caption("Capítulos sin denominador; se aplica factor_cap.")
         st.dataframe(audit_caps, use_container_width=True)
+#GRAFIFO NUEVO ojooooooooooooooo
+cats_imp = [
+    "Artículos en bases de impacto",
+    "Artículos Latindex Catálogo",
+    "Artículos Bases Regionales",
+    "Proceedings en Scopus/WoS (ACI)",
+]
+
+by_fac_cat_imp = (vis_cat[vis_cat["CATEGORIA_FAC"].isin(cats_imp)]
+                  .groupby(["FACULTAD","CATEGORIA_FAC"])
+                  .size()
+                  .reset_index(name="Publicaciones"))
+
+chart_art_proc = (
+    alt.Chart(by_fac_cat_imp)
+      .mark_bar()
+      .encode(
+          x=alt.X("FACULTAD:N", title="Facultad"),
+          y=alt.Y("sum(Publicaciones):Q", title="N.º de publicaciones"),
+          color=alt.Color(
+              "CATEGORIA_FAC:N",
+              title="Tipo de publicación",
+              scale=alt.Scale(
+                  domain=cats_imp,
+                  range=["#1B5E20", "#2E7D32", "#66BB6A", "#81C784"]
+              )
+          ),
+          tooltip=["FACULTAD","CATEGORIA_FAC","Publicaciones"]
+      )
+      .properties(title="Publicaciones (solo artículos y proceedings) por Facultad")
+)
+st.altair_chart(chart_art_proc, use_container_width=True)
+# grafico nuevo 2 ojoooooo
+tot_libros = int((vis["CLASE_NORM"].astype(str).str.upper() == "LIBRO").sum())
+# Detección robusta de capítulos por clase y, como respaldo, por texto
+mask_cap = (vis["CLASE_NORM"].astype(str).str.upper() == "CAPITULO")
+if "TIPO" in vis.columns:
+    mask_cap = mask_cap | vis["TIPO"].astype(str).str.contains(r"cap[ií]tulo|chapter", case=False, na=False)
+if "PUBLICACIÓN" in vis.columns:
+    mask_cap = mask_cap | vis["PUBLICACIÓN"].astype(str).str.contains(r"cap[ií]tulo|chapter", case=False, na=False)
+tot_caps = int(mask_cap.sum())
+
+tot_lcl_simple = pd.DataFrame({
+    "Tipo": ["Libros","Capítulos de libro"],
+    "Total": [tot_libros, tot_caps],
+})
+
+chart_lcl_tot = (
+    alt.Chart(tot_lcl_simple)
+      .mark_bar()
+      .encode(
+          x=alt.X("Tipo:N", title=None),
+          y=alt.Y("Total:Q", title="Total (deduplicado)"),
+          color=alt.Color("Tipo:N",
+                          scale=alt.Scale(domain=["Libros","Capítulos de libro"],
+                                          range=["#2E7D32","#81C784"])),
+          tooltip=["Tipo","Total"]
+      )
+      .properties(title="Totales globales (Libros vs Capítulos de libro)")
+)
+st.altair_chart(chart_lcl_tot, use_container_width=True)
 
 
 # --- tarjeta φ_base (promedio global del subconjunto) y PPC (suma de λ) en la misma fila ---
