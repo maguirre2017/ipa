@@ -918,7 +918,7 @@ st.subheader("Tabla de publicaciones consideradas (primer autor)")
 # Filtros de la tabla (amplíe vinculación para no excluir casos)
 year_tab = st.multiselect("Año (tabla)", years_all, default=year_vis_sel or years_all, key="tab_years")
 
-vinciones_disponibles = ["NOMBRAMIENTO","OCASIONAL","SIN VINCULACION"]
+vinciones_disponibles = ["NOMBRAMIENTO","OCASIONAL"]
 vinc_tab = st.multiselect(
     "Tipo de vinculación (tabla)",
     vinciones_disponibles,
@@ -980,7 +980,7 @@ tab["ES_CAPITULO"] = tab["CLASE_NORM"].astype(str).str.upper().eq("CAPITULO")
 cols_show = [
     "AÑO","SEDE","FACULTAD","CARRERA","PRIMER_AUTOR","VINCULACION_PUB",
     "PUBLICACIÓN","REVISTA","CUARTIL","INDEXACIÓN","CLASE_NORM","TIPO DE PUBLICACIÓN",
-    "ES_PROCEEDINGS_ACI","ES_CAPITULO","DOI","URL"
+    "DOI","URL"
 ]
 cols_show = [c for c in cols_show if c in tab.columns]  # por seguridad
 
