@@ -584,9 +584,151 @@ chart_type_fac = (
       )
       .properties(title="Tipo de publicación por Facultad")
 )
+# ponderados por facultad
+st.altair_chart(chart_type_fac, use_container_width=True
+               iipa_fac_year = ( # si guarda por facultad/año
+    df_resultados.groupby(["AÑO","FACULTAD"])["IIPA"].mean().reset_index()
+)
+heat = alt.Chart(iipa_fac_year).mark_rect().encode(
+    x=alt.X("AÑO:O"), y=alt.Y("FACULTAD:N"),
+    color=alt.Color("IIPA:Q", scale=alt.Scale(scheme="greens")),
+    tooltip=["FACULTAD","AÑO",alt.Tooltip("IIPA:Q", format=".3f")]
+).properties(title="Mapa de calor IIPA (Facultad × Año)")
+st.altair_chart(heat, use_container_width=True)
 
-st.altair_chart(chart_type_fac, use_container_width=True)
+# agregados LCL (Libros + Capítulos ponderados)
+lcl_df = pd.DataFrame({
+ "FACULTAD": [*calc_tot["FACULTAD"].unique()]
+})
+# recomputar lcl por FACULTAD (usar su lógica exacta de ponderación)
+def lcl_fac(sub):
+    mask_lib= sub["CLASE_NORM"].eq("LIBRO")
+    mask_cap= sub["CLASE_NORM"].eq("CAPITULO")
+    libros = mask_lib.sum()
+    if usar_total_caps:
+        caps_df = sub.loc[mask_cap].copy()
+        caps_df["_den"] = pd.to_numeric(caps_df["TOTAL_CAPITULOS"], errors="coerce")
+        caps_df["_w"]   = 1.0 / caps_df["_den"]
+        caps_w = caps_df["_w"].where(~caps_df["_w"].isna() & np.isfinite(caps_df["_w"]),
+                                     other=float(factor_cap)).sum()
+    else:
+        caps_w = mask_cap.sum()*float(factor_cap)
+    return libros, caps_w
 
+agg = (calc_tot.groupby("FACULTAD")
+       .apply(lambda g: pd.Series(lcl_fac(g), index=["Libros","Capítulos (pond.)"]))
+       .reset_index())
+lcl_long = agg.melt("FACULTAD", var_name="Tipo", value_name="n")
+chart_lcl = alt.Chart(lcl_long).mark_bar().encode(
+    x=alt.X("FACULTAD:N"),
+    y=alt.Y("n:Q", title="Contribución LCL"),
+    color="Tipo:N"
+).properties(title="LCL por Facultad (Libros + Capítulos ponderados)")
+st.altair_chart(chart_lcl, use_container_width=True)
+
+# calidad del dato
+caps_all = calc_tot.loc[calc_tot["CLASE_NORM"].eq("CAPITULO")].copy()
+caps_all["_den"] = pd.to_numeric(caps_all["TOTAL_CAPITULOS"], errors="coerce")
+chart_den = alt.Chart(caps_all).mark_boxplot().encode(
+    x=alt.X("FACULTAD:N"),
+    y=alt.Y("_den:Q", title="TOTAL_CAPITULOS")
+).properties(title="Distribución de TOTAL_CAPITULOS (capítulos)")
+st.altair_chart(chart_den, use_container_width=True)
+
+# auditoría
+audit_caps = caps_all.loc[caps_all["_den"].isna(), ["FACULTAD","TITULO","TOTAL_CAPITULOS"]].head(30)
+if not audit_caps.empty:
+    st.caption("Capítulos sin denominador; se aplica factor_cap.")
+    st.dataframe(audit_caps, use_container_width=True)
+
+# --- tarjeta φ_base (promedio global del subconjunto) ---
+vis_phi = vis.copy()
+vis_phi["phi_base"] = vis_phi.apply(phi_base_only, axis=1)
+
+phi_mean = float(vis_phi["phi_base"].mean()) if not vis_phi.empty else float("nan")
+phi_median = float(vis_phi["phi_base"].median()) if not vis_phi.empty else float("nan")
+n_phi = int(len(vis_phi))
+
+c_phi = st.container()
+with c_phi:
+    st.metric(
+        "φ_base — Promedio",
+        f"{phi_mean:.3f}" if not np.isnan(phi_mean) else "—",
+        help=f"Mediana: {phi_median:.3f} | Registros: {n_phi}"
+    )
+
+# --- tabla de reglas (estática) ---
+rules = pd.DataFrame({
+ "Condición": ["Q1","Q2","Q3","Q4","Scopus/WoS","Latindex Catálogo","Otras bases","Sin indexación"],
+ "φ_base": [1.0,0.9,0.8,0.7,0.6,0.2,0.5,0.0]
+})
+st.dataframe(rules, use_container_width=True)
+
+# --- distribución de φ_base por Facultad ---
+chart_phi = alt.Chart(vis_phi).mark_boxplot().encode(
+    x=alt.X("FACULTAD:N", title="Facultad"),
+    y=alt.Y("phi_base:Q", title="φ_base")
+).properties(title="Distribución de φ_base por Facultad")
+st.altair_chart(chart_phi, use_container_width=True)
+
+# --- preparar PPC (de su cálculo existente) ---
+ppc = ppc_tot_rows.copy()  # salida de numerador_IIPA(...)
+ppc["aplica_21"] = ppc["lambda"].gt(ppc["phi_base"])
+ppc["tipo"] = np.where(ppc["CLASE_NORM"].eq("PROCEEDINGS"), "Proceedings", "Artículo")
+
+ppc["calidad"] = np.where(
+    ppc["CUARTIL"].str.fullmatch("Q[1-4]", case=False, na=False),
+    ppc["CUARTIL"].str.upper(),
+    np.where(
+        ppc["INDEXACIÓN"].str.contains("SCOPUS|WOS|WEB OF SCIENCE", case=False, na=False),
+        "Scopus/WoS",
+        "Otras"
+    )
+)
+
+# --- tarjeta PPC (suma de λ que entra al numerador) ---
+ppc_val = float(ppc["lambda"].sum()) if not ppc.empty else float("nan")
+ppc_base = float(ppc["phi_base"].sum()) if not ppc.empty else float("nan")
+n_aplicados = int(ppc["aplica_21"].sum()) if not ppc.empty else 0
+limite_21 = int(np.floor(0.21 * len(ppc))) if len(ppc) > 0 else 0
+
+c_ppc = st.container()
+with c_ppc:
+    st.metric(
+        "PPC — Suma de λ",
+        f"{ppc_val:.3f}" if not np.isnan(ppc_val) else "—",
+        help=f"φ_base total: {ppc_base:.3f} | 21% aplicado a {n_aplicados}/{limite_21} publicaciones"
+    )
+
+# --- barras apiladas por Facultad/Tipo/Calidad ---
+chart_ppc = alt.Chart(ppc).mark_bar().encode(
+    x=alt.X("FACULTAD:N", title="Facultad"),
+    y=alt.Y("count():Q", title="N.º PPC"),
+    color=alt.Color("calidad:N", title="Calidad"),
+    column=alt.Column("tipo:N", title="Tipo"),
+    tooltip=["FACULTAD","tipo","calidad","count()"]
+).properties(title="PPC por Facultad (calidad y tipo)").resolve_scale(y='independent')
+st.altair_chart(chart_ppc, use_container_width=True)
+
+# --- φ_base vs λ (dumbbell/lollipop) ---
+lolli = ppc.melt(
+    id_vars=["FACULTAD","aplica_21"],
+    value_vars=["phi_base","lambda"],
+    var_name="metrica", value_name="valor"
+)
+chart_lolli = alt.Chart(lolli).mark_line(point=True).encode(
+    x=alt.X("valor:Q", title="Peso"),
+    y=alt.Y("row_number():O", axis=None),
+    color=alt.Color("aplica_21:N", title="Aplicó 21%"),
+    detail="variable:O"
+).properties(title="Impacto del 21% por publicación (φ_base → λ)")
+st.altair_chart(chart_lolli, use_container_width=True)
+
+# --- Top incrementos ---
+top_gain = (ppc.loc[ppc["lambda"].gt(ppc["phi_base"]), ["FACULTAD","phi_base","lambda"]]
+              .assign(gain=lambda d: d["lambda"] - d["phi_base"])
+              .sort_values("gain", ascending=False).head(15))
+st.dataframe(top_gain, use_container_width=True)
 
 
 # ------------------ Tabla final filtrable ------------------
