@@ -366,20 +366,69 @@ def numerador_IIPA(subdf: pd.DataFrame, intercultural_21=True) -> tuple:
     # PPA
     ppa = float(subdf["CLASE_NORM"].eq("ARTE_INT").sum())*1.0 + float(subdf["CLASE_NORM"].eq("ARTE_NAC").sum())*0.9
 
-    # LCL: libros + capítulos
-    mask_libro = subdf["CLASE_NORM"].eq("LIBRO")
-    mask_cap   = subdf["CLASE_NORM"].eq("CAPITULO")
-    libros = float(mask_libro.sum())
-    if usar_total_caps:
-        caps_df = subdf.loc[mask_cap].copy()
-        caps_df["_den"] = pd.to_numeric(caps_df["TOTAL_CAPITULOS"], errors="coerce")
-        caps_df["_w"] = np.where((caps_df["_den"] > 0) & np.isfinite(caps_df["_den"]),
-                         1.0 / caps_df["_den"],
-                         float("nan"))
-        caps = caps_df["_w"].fillna(float(factor_cap)).sum()
+# LCL: libros + capítulos (agrupado por libro)
+mask_libro = subdf["CLASE_NORM"].eq("LIBRO")
+mask_cap   = subdf["CLASE_NORM"].eq("CAPITULO")
+libros = float(mask_libro.sum())
+
+caps_df = subdf.loc[mask_cap].copy()
+if not caps_df.empty:
+    # Construir una clave de libro robusta (prioridades: DOI_LIBRO, ISBN, TITULO_LIBRO, heurística de PUBLICACIÓN)
+    def _norm_key(s):
+        s = "" if pd.isna(s) else str(s).strip().lower()
+        s = (s.replace("á","a").replace("é","e").replace("í","i")
+               .replace("ó","o").replace("ú","u").replace("ñ","n"))
+        s = " ".join(s.split())
+        return s
+
+    # Si existen columnas específicas del libro, úselas
+    candidates = []
+    if "DOI_LIBRO" in caps_df.columns:     candidates.append(caps_df["DOI_LIBRO"].map(_norm_key))
+    if "ISBN" in caps_df.columns:          candidates.append(caps_df["ISBN"].map(_norm_key))
+    if "TITULO_LIBRO" in caps_df.columns:  candidates.append(caps_df["TITULO_LIBRO"].map(_norm_key))
+    if "LIBRO" in caps_df.columns:         candidates.append(caps_df["LIBRO"].map(_norm_key))
+
+    # Heurística desde PUBLICACIÓN (quita la parte "capítulo ...")
+    if "PUBLICACIÓN" in caps_df.columns:
+        pub_base = caps_df["PUBLICACIÓN"].astype(str).str.lower()
+        pub_base = pub_base.str.replace(r"cap[ií]tulo.*", "", regex=True).str.replace(r"chapter.*", "", regex=True)
+        candidates.append(pub_base.map(_norm_key))
+
+    # Use la primera columna no vacía como BOOK_KEY
+    if candidates:
+        BOOK_KEY = candidates[0].copy()
+        for c in candidates[1:]:
+            BOOK_KEY = np.where((BOOK_KEY == "") & (c != ""), c, BOOK_KEY)
     else:
-        caps = float(mask_cap.sum()) * float(factor_cap)
-    lcl = libros + caps
+        # Último recurso: combine revista + año
+        BOOK_KEY = (caps_df.get("REVISTA","").astype(str).str.lower().fillna("") + " | " +
+                    caps_df.get("AÑO","").astype(str).fillna(""))
+
+    caps_df["_BOOK_KEY"] = BOOK_KEY
+
+    # Denominador confiable por libro
+    caps_df["_den"] = pd.to_numeric(caps_df["TOTAL_CAPITULOS"], errors="coerce")
+
+    # Agrupar por libro: capítulos publicados por la universidad (conteo de filas) y denominador del libro
+    grp = (caps_df
+           .groupby("_BOOK_KEY", dropna=False)
+           .agg(
+               caps_ua=("PUBLICACIÓN", "size"),
+               den_book=("_den", lambda s: s.dropna().iloc[0] if s.dropna().size else np.nan)
+           )
+           .reset_index())
+
+    # Peso por libro: (#capítulos UAE / TOTAL_CAPITULOS), con fallback al factor fijo si no hay denominador válido
+    grp["w_book"] = np.where((grp["den_book"] > 0) & np.isfinite(grp["den_book"]),
+                             grp["caps_ua"] / grp["den_book"],
+                             grp["caps_ua"] * float(factor_cap))
+
+    caps = float(grp["w_book"].sum())
+else:
+    caps = 0.0
+
+lcl = libros + caps
+
 
     # PPI
     ppi = float(subdf["CLASE_NORM"].eq("PPI").sum())
@@ -620,15 +669,6 @@ chart_lcl = alt.Chart(lcl_long).mark_bar().encode(
     range=["#2E7D32","#81C784"]))
 ).properties(title="LCL por Facultad (Libros + Capítulos ponderados)")
 st.altair_chart(chart_lcl, use_container_width=True)
-
-# calidad del dato
-caps_all = calc_tot.loc[calc_tot["CLASE_NORM"].eq("CAPITULO")].copy()
-caps_all["_den"] = pd.to_numeric(caps_all["TOTAL_CAPITULOS"], errors="coerce")
-chart_den = alt.Chart(caps_all).mark_boxplot().encode(
-    x=alt.X("FACULTAD:N"),
-    y=alt.Y("_den:Q", title="TOTAL_CAPITULOS")
-).properties(title="Distribución de TOTAL_CAPITULOS (capítulos)")
-st.altair_chart(chart_den, use_container_width=True)
 
 # auditoría
 audit_caps = caps_all.loc[caps_all["_den"].isna(), ["FACULTAD","PUBLICACIÓN","TOTAL_CAPITULOS"]].head(30)
