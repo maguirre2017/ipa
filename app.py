@@ -728,7 +728,7 @@ if not caps_all.empty:
         st.dataframe(audit_caps, use_container_width=True)
 
 
-# --- tarjeta φ_base (promedio global del subconjunto) ---
+# --- tarjeta φ_base (promedio global del subconjunto) y PPC (suma de λ) en la misma fila ---
 vis_phi = vis.copy()
 vis_phi["phi_base"] = vis_phi.apply(phi_base_only, axis=1)
 
@@ -736,20 +736,10 @@ phi_mean = float(vis_phi["phi_base"].mean()) if not vis_phi.empty else float("na
 phi_median = float(vis_phi["phi_base"].median()) if not vis_phi.empty else float("nan")
 n_phi = int(len(vis_phi))
 
-c_phi = st.container()
-with c_phi:
-    st.metric(
-        "φ_base — Promedio",
-        f"{phi_mean:.3f}" if not np.isnan(phi_mean) else "—",
-        help=f"Mediana: {phi_median:.3f} | Registros: {n_phi}"
-    )
-
-
-# --- preparar PPC (de su cálculo existente) ---
-ppc = ppc_tot_rows.copy()  # salida de numerador_IIPA(...)
+# Preparar PPC (de su cálculo existente)
+ppc = ppc_tot_rows.copy()
 ppc["aplica_21"] = ppc["lambda"].gt(ppc["phi_base"])
 ppc["tipo"] = np.where(ppc["CLASE_NORM"].eq("PROCEEDINGS"), "Proceedings", "Artículo")
-
 ppc["calidad"] = np.where(
     ppc["CUARTIL"].str.fullmatch("Q[1-4]", case=False, na=False),
     ppc["CUARTIL"].str.upper(),
@@ -760,14 +750,22 @@ ppc["calidad"] = np.where(
     )
 )
 
-# --- tarjeta PPC (suma de λ que entra al numerador) ---
 ppc_val = float(ppc["lambda"].sum()) if not ppc.empty else float("nan")
 ppc_base = float(ppc["phi_base"].sum()) if not ppc.empty else float("nan")
 n_aplicados = int(ppc["aplica_21"].sum()) if not ppc.empty else 0
 limite_21 = int(np.floor(0.21 * len(ppc))) if len(ppc) > 0 else 0
 
-c_ppc = st.container()
-with c_ppc:
+# --- Tarjetas en una misma fila ---
+col1, col2 = st.columns(2)
+
+with col1:
+    st.metric(
+        "φ_base — Promedio",
+        f"{phi_mean:.3f}" if not np.isnan(phi_mean) else "—",
+        help=f"Mediana: {phi_median:.3f} | Registros: {n_phi}"
+    )
+
+with col2:
     st.metric(
         "PPC — Suma de λ",
         f"{ppc_val:.3f}" if not np.isnan(ppc_val) else "—",
