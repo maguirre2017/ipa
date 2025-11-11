@@ -702,9 +702,31 @@ def lcl_fac(sub):
 
     caps_w = float(grp["w_book"].sum())
     return float(libros), float(caps_w)
+# --- calidad del dato (siempre definir caps_all antes de auditar) ---
+caps_all = calc_tot.loc[calc_tot["CLASE_NORM"].eq("CAPITULO")].copy()
 
-# auditoría
-audit_caps = caps_all.loc[caps_all["_den"].isna(), ["FACULTAD","PUBLICACIÓN","TOTAL_CAPITULOS"]].head(30)
+# Asegurar la columna TOTAL_CAPITULOS para evitar NameError/KeyError
+if "TOTAL_CAPITULOS" not in caps_all.columns:
+    caps_all["TOTAL_CAPITULOS"] = np.nan
+
+# Denominador numérico y seguro
+caps_all["_den"] = pd.to_numeric(caps_all["TOTAL_CAPITULOS"], errors="coerce")
+
+# Boxplot solo si hay datos
+if not caps_all.empty:
+    chart_den = alt.Chart(caps_all).mark_boxplot().encode(
+        x=alt.X("FACULTAD:N"),
+        y=alt.Y("_den:Q", title="TOTAL_CAPITULOS")
+    ).properties(title="Distribución de TOTAL_CAPITULOS (capítulos)")
+    st.altair_chart(chart_den, use_container_width=True)
+# --- auditoría: capítulos sin denominador válido ---
+if not caps_all.empty:
+    cols_audit = [c for c in ["FACULTAD", "PUBLICACIÓN", "TOTAL_CAPITULOS"] if c in caps_all.columns]
+    audit_caps = caps_all.loc[caps_all["_den"].isna(), cols_audit].head(30)
+    if not audit_caps.empty:
+        st.caption("Capítulos sin denominador; se aplica factor_cap.")
+        st.dataframe(audit_caps, use_container_width=True)
+
 
 # --- tarjeta φ_base (promedio global del subconjunto) ---
 vis_phi = vis.copy()
