@@ -345,6 +345,7 @@ def numerador_IIPA(subdf: pd.DataFrame, intercultural_21=True) -> tuple:
         subdf["CUARTIL"].str.contains("Q[1-4]", case=False, na=True)
     )
     ppc_rows = subdf.loc[is_article | is_proc].copy()
+
     if ppc_rows.empty:
         return 0.0, ppc_rows.assign(phi_base=[], lambda_=[]), 0.0, 0.0, 0.0, 0
 
@@ -354,6 +355,7 @@ def numerador_IIPA(subdf: pd.DataFrame, intercultural_21=True) -> tuple:
     n_total = len(ppc_rows)
     ppc_rows["lambda"] = ppc_rows["phi_base"]
     n_aplicados = 0
+
     if intercultural_21 and n_total > 0:
         n_limit = int(np.floor(0.21 * n_total))
         ppc_rows["gain"] = np.minimum(1.0, ppc_rows["phi_base"] + 0.21) - ppc_rows["phi_base"]
@@ -364,77 +366,82 @@ def numerador_IIPA(subdf: pd.DataFrame, intercultural_21=True) -> tuple:
     ppc = float(ppc_rows["lambda"].sum())
 
     # PPA
-    ppa = float(subdf["CLASE_NORM"].eq("ARTE_INT").sum())*1.0 + float(subdf["CLASE_NORM"].eq("ARTE_NAC").sum())*0.9
+    ppa = float(subdf["CLASE_NORM"].eq("ARTE_INT").sum()) * 1.0 + \
+          float(subdf["CLASE_NORM"].eq("ARTE_NAC").sum()) * 0.9
 
-# LCL: libros + capítulos (agrupado por libro)
-mask_libro = subdf["CLASE_NORM"].eq("LIBRO")
-mask_cap   = subdf["CLASE_NORM"].eq("CAPITULO")
-libros = float(mask_libro.sum())
+    # LCL: libros + capítulos (agrupado por libro)
+    mask_libro = subdf["CLASE_NORM"].eq("LIBRO")
+    mask_cap = subdf["CLASE_NORM"].eq("CAPITULO")
+    libros = float(mask_libro.sum())
 
-caps_df = subdf.loc[mask_cap].copy()
-if not caps_df.empty:
-    # Construir una clave de libro robusta (prioridades: DOI_LIBRO, ISBN, TITULO_LIBRO, heurística de PUBLICACIÓN)
-    def _norm_key(s):
-        s = "" if pd.isna(s) else str(s).strip().lower()
-        s = (s.replace("á","a").replace("é","e").replace("í","i")
-               .replace("ó","o").replace("ú","u").replace("ñ","n"))
-        s = " ".join(s.split())
-        return s
+    caps_df = subdf.loc[mask_cap].copy()
+    if not caps_df.empty:
+        # Construir una clave de libro robusta
+        def _norm_key(s):
+            s = "" if pd.isna(s) else str(s).strip().lower()
+            s = (s.replace("á", "a").replace("é", "e").replace("í", "i")
+                   .replace("ó", "o").replace("ú", "u").replace("ñ", "n"))
+            s = " ".join(s.split())
+            return s
 
-    # Si existen columnas específicas del libro, úselas
-    candidates = []
-    if "DOI_LIBRO" in caps_df.columns:     candidates.append(caps_df["DOI_LIBRO"].map(_norm_key))
-    if "ISBN" in caps_df.columns:          candidates.append(caps_df["ISBN"].map(_norm_key))
-    if "TITULO_LIBRO" in caps_df.columns:  candidates.append(caps_df["TITULO_LIBRO"].map(_norm_key))
-    if "LIBRO" in caps_df.columns:         candidates.append(caps_df["LIBRO"].map(_norm_key))
+        # Si existen columnas específicas del libro, úselas
+        candidates = []
+        if "DOI_LIBRO" in caps_df.columns:
+            candidates.append(caps_df["DOI_LIBRO"].map(_norm_key))
+        if "ISBN" in caps_df.columns:
+            candidates.append(caps_df["ISBN"].map(_norm_key))
+        if "TITULO_LIBRO" in caps_df.columns:
+            candidates.append(caps_df["TITULO_LIBRO"].map(_norm_key))
+        if "LIBRO" in caps_df.columns:
+            candidates.append(caps_df["LIBRO"].map(_norm_key))
 
-    # Heurística desde PUBLICACIÓN (quita la parte "capítulo ...")
-    if "PUBLICACIÓN" in caps_df.columns:
-        pub_base = caps_df["PUBLICACIÓN"].astype(str).str.lower()
-        pub_base = pub_base.str.replace(r"cap[ií]tulo.*", "", regex=True).str.replace(r"chapter.*", "", regex=True)
-        candidates.append(pub_base.map(_norm_key))
+        # Heurística desde PUBLICACIÓN
+        if "PUBLICACIÓN" in caps_df.columns:
+            pub_base = caps_df["PUBLICACIÓN"].astype(str).str.lower()
+            pub_base = pub_base.str.replace(r"cap[ií]tulo.*", "", regex=True)
+            pub_base = pub_base.str.replace(r"chapter.*", "", regex=True)
+            candidates.append(pub_base.map(_norm_key))
 
-    # Use la primera columna no vacía como BOOK_KEY
-    if candidates:
-        BOOK_KEY = candidates[0].copy()
-        for c in candidates[1:]:
-            BOOK_KEY = np.where((BOOK_KEY == "") & (c != ""), c, BOOK_KEY)
+        # Use la primera columna no vacía como BOOK_KEY
+        if candidates:
+            BOOK_KEY = candidates[0].copy()
+            for c in candidates[1:]:
+                BOOK_KEY = np.where((BOOK_KEY == "") & (c != ""), c, BOOK_KEY)
+        else:
+            BOOK_KEY = (caps_df.get("REVISTA", "").astype(str).str.lower().fillna("") + " | " +
+                        caps_df.get("AÑO", "").astype(str).fillna(""))
+
+        caps_df["_BOOK_KEY"] = BOOK_KEY
+        caps_df["_den"] = pd.to_numeric(caps_df["TOTAL_CAPITULOS"], errors="coerce")
+
+        # Agrupar por libro: capítulos publicados por la universidad y denominador del libro
+        grp = (caps_df
+               .groupby("_BOOK_KEY", dropna=False)
+               .agg(
+                   caps_ua=("PUBLICACIÓN", "size"),
+                   den_book=("_den", lambda s: s.dropna().iloc[0] if s.dropna().size else np.nan)
+               )
+               .reset_index())
+
+        # Peso por libro
+        grp["w_book"] = np.where(
+            (grp["den_book"] > 0) & np.isfinite(grp["den_book"]),
+            grp["caps_ua"] / grp["den_book"],
+            grp["caps_ua"] * float(factor_cap)
+        )
+
+        caps = float(grp["w_book"].sum())
     else:
-        # Último recurso: combine revista + año
-        BOOK_KEY = (caps_df.get("REVISTA","").astype(str).str.lower().fillna("") + " | " +
-                    caps_df.get("AÑO","").astype(str).fillna(""))
+        caps = 0.0
 
-    caps_df["_BOOK_KEY"] = BOOK_KEY
-
-    # Denominador confiable por libro
-    caps_df["_den"] = pd.to_numeric(caps_df["TOTAL_CAPITULOS"], errors="coerce")
-
-    # Agrupar por libro: capítulos publicados por la universidad (conteo de filas) y denominador del libro
-    grp = (caps_df
-           .groupby("_BOOK_KEY", dropna=False)
-           .agg(
-               caps_ua=("PUBLICACIÓN", "size"),
-               den_book=("_den", lambda s: s.dropna().iloc[0] if s.dropna().size else np.nan)
-           )
-           .reset_index())
-
-    # Peso por libro: (#capítulos UAE / TOTAL_CAPITULOS), con fallback al factor fijo si no hay denominador válido
-    grp["w_book"] = np.where((grp["den_book"] > 0) & np.isfinite(grp["den_book"]),
-                             grp["caps_ua"] / grp["den_book"],
-                             grp["caps_ua"] * float(factor_cap))
-
-    caps = float(grp["w_book"].sum())
-else:
-    caps = 0.0
-
-lcl = libros + caps
-
+    lcl = libros + caps
 
     # PPI
-ppi = float(subdf["CLASE_NORM"].eq("PPI").sum())
+    ppi = float(subdf["CLASE_NORM"].eq("PPI").sum())
 
-numerador = ppc + ppa + lcl + ppi
-return numerador, ppc_rows, ppa, lcl, ppi, n_aplicados
+    numerador = ppc + ppa + lcl + ppi
+    return numerador, ppc_rows, ppa, lcl, ppi, n_aplicados
+
 
 # ------------------ Denominador ------------------
 def den_val(ptc, pmt):
