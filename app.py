@@ -758,7 +758,6 @@ chart_art_proc = (
 st.altair_chart(chart_art_proc, use_container_width=True)
 # grafico nuevo 2 ojoooooo
 # --- Totales globales (Libros vs Capítulos) DEDUPLICADOS ---
-# --- Totales globales (Libros vs Capítulos) DEDUPLICADOS ---
 import re, unicodedata
 
 def _norm_key(s):
@@ -864,6 +863,9 @@ st.altair_chart(chart_lcl_tot, use_container_width=True)
 # (Opcional) Muestra contadores como caption para auditar
 st.caption(f"Libros únicos: {tot_libros} | Capítulos únicos: {tot_caps}")
 
+# (Opcional) Muestra contadores como caption para auditar
+st.caption(f"Libros únicos: {tot_libros} | Capítulos únicos: {tot_caps}")
+
 
 # --- tarjeta φ_base (promedio global del subconjunto) y PPC (suma de λ) en la misma fila ---
 vis_phi = vis.copy()
@@ -910,8 +912,7 @@ with col2:
     )
 
 
-# ------------------ Tabla final filtrable ------------------
-# ------------------ Tabla final filtrable ------------------
+
 # ------------------ Tabla final filtrable ------------------
 st.subheader("Tabla de publicaciones consideradas (primer autor)")
 
