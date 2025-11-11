@@ -512,53 +512,65 @@ heat = (
 st.altair_chart(heat, use_container_width=True)
 
 # -------- NUEVO: Tipo de publicación por Facultad (categorías solicitadas) --------
-def _class_pub_for_fac(row):
-    clase = str(row.get("CLASE_NORM", "")).upper().strip()
-    cu    = str(row.get("CUARTIL", "")).upper().strip()
-    idx   = str(row.get("INDEXACIÓN", "")).upper().strip()
+import re
+import unicodedata
 
-    # Libros (excluir capítulos)
-    if clase == "LIBRO":
+def _norm(s: str) -> str:
+    s = str(s or "").strip().upper()
+    s = unicodedata.normalize("NFD", s)
+    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")  # sin tildes
+    s = re.sub(r"\s+", " ", s)
+    return s
+
+def _class_pub_for_fac(row):
+    clase = _norm(row.get("CLASE_NORM", ""))
+    cu    = _norm(row.get("CUARTIL", ""))
+    idx   = _norm(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
+
+    # --- detectar capítulos de libro (ES/EN) ---
+    # Casos típicos: "CAPITULO DE LIBRO", "LIBRO: CAPITULO", "BOOK CHAPTER", "CHAPTER IN BOOK", "PART OF BOOK"
+    if re.search(r"\b(CAPITULO|BOOK CHAPTER|CHAPTER IN BOOK|PART OF BOOK)\b", clase):
+        return "Capítulos de libro"
+
+    # Libros (solo libro completo, ya excluidos los capítulos arriba)
+    if re.search(r"\b(LIBRO|BOOK)\b", clase):
         return "Libros"
 
     # Proceedings en Scopus
-    if clase == "PROCEEDINGS" and "SCOPUS" in idx:
+    if "PROCEEDINGS" in clase and "SCOPUS" in idx:
         return "Proceedings en Scopus"
 
     # Artículos por calidad / base
-    if clase == "ARTICULO":
-        # Bases de impacto: Q1–Q4 o WoS/Scopus
+    if re.search(r"\b(ARTICULO|ARTICLE)\b", clase):
         if cu in {"Q1", "Q2", "Q3", "Q4"} or ("SCOPUS" in idx or "WOS" in idx or "WEB OF SCIENCE" in idx):
             return "Artículos en bases de impacto"
-        # Latindex Catálogo
-        if "LATINDEX" in idx:
+        if "LATINDEX" in idx and "CATALOGO" in idx:
             return "Artículos Latindex Catálogo"
-        # Otras bases regionales (distintas de Scopus/WoS/Latindex), si hay alguna indexación
-        if idx not in ("", "NO REGISTRADO", "NAN"):
+        if idx not in {"", "NO REGISTRADO", "NAN"}:
             return "Artículos Bases Regionales"
 
-    # Todo lo demás: no se grafica en este panel
     return None
 
+# --- pipeline sin cambios, añadiendo la nueva categoría ---
 vis_cat = vis.copy()
 vis_cat["CATEGORIA_FAC"] = vis_cat.apply(_class_pub_for_fac, axis=1)
 vis_cat = vis_cat.dropna(subset=["CATEGORIA_FAC"])
 
-# Orden consistente de categorías
 cat_order = [
     "Artículos en bases de impacto",
     "Artículos Latindex Catálogo",
     "Artículos Bases Regionales",
     "Libros",
+    "Capítulos de libro",      # <-- nueva categoría
     "Proceedings en Scopus",
 ]
+
+# paleta (6 tonos, consistente y legible)
+cat_colors = ["#1B5E20", "#2E7D32", "#43A047", "#66BB6A", "#81C784", "#A5D6A7"]
+
 vis_cat["CATEGORIA_FAC"] = pd.Categorical(vis_cat["CATEGORIA_FAC"], categories=cat_order, ordered=True)
 
-# Agregación
 by_fac_cat = vis_cat.groupby(["FACULTAD","CATEGORIA_FAC"]).size().reset_index(name="Publicaciones")
-
-# Paleta de verdes profesional
-cat_colors = ["#1B5E20", "#2E7D32", "#43A047", "#66BB6A", "#81C784"]
 
 chart_type_fac = (
     alt.Chart(by_fac_cat)
@@ -576,12 +588,13 @@ chart_type_fac = (
 st.altair_chart(chart_type_fac, use_container_width=True)
 
 
+
 # ------------------ Tabla final filtrable ------------------
 st.subheader("Tabla de publicaciones consideradas (primer autor)")
 year_tab = st.multiselect("Año (tabla)", years_all, default=year_vis_sel or years_all, key="tab_years")
 vinc_tab = st.multiselect("Tipo de vinculación (tabla)",
-                          ["NOMBRAMIENTO","OCASIONAL","SIN VINCULACION"],
-                          default=["NOMBRAMIENTO","OCASIONAL","SIN VINCULACION"])
+                          ["NOMBRAMIENTO","OCASIONAL"],
+                          default=["NOMBRAMIENTO","OCASIONAL"])
 
 tab = vis.copy()
 if year_tab:
