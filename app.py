@@ -587,21 +587,6 @@ chart_type_fac = (
 # ponderados por facultad
 st.altair_chart(chart_type_fac, use_container_width=True)
 
-# mapa de calor IIPA (Facultad × Año)
-iipa_fac_year = (  # si guarda por facultad/año
-    df_resultados.groupby(["AÑO","FACULTAD"])["IIPA"].mean().reset_index()
-)
-
-heat = alt.Chart(iipa_fac_year).mark_rect().encode(
-    x=alt.X("AÑO:O"),
-    y=alt.Y("FACULTAD:N"),
-    color=alt.Color("IIPA:Q", scale=alt.Scale(scheme="greens")),
-    tooltip=["FACULTAD", "AÑO", alt.Tooltip("IIPA:Q", format=".3f")]
-).properties(title="Mapa de calor IIPA (Facultad × Año)")
-
-st.altair_chart(heat, use_container_width=True)
-
-
 # agregados LCL (Libros + Capítulos ponderados)
 lcl_df = pd.DataFrame({
  "FACULTAD": [*calc_tot["FACULTAD"].unique()]
