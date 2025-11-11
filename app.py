@@ -585,7 +585,7 @@ chart_type_fac = (
       .properties(title="Tipo de publicación por Facultad")
 )
 # ponderados por facultad
-st.altair_chart(chart_type_fac, use_container_width=True
+st.altair_chart(chart_type_fac, use_container_width=True)
                iipa_fac_year = ( # si guarda por facultad/año
     df_resultados.groupby(["AÑO","FACULTAD"])["IIPA"].mean().reset_index()
 )
