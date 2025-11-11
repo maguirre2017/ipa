@@ -644,31 +644,57 @@ lcl_df = pd.DataFrame({
 })
 # recomputar lcl por FACULTAD (usar su lógica exacta de ponderación)
 def lcl_fac(sub):
-    mask_lib= sub["CLASE_NORM"].eq("LIBRO")
-    mask_cap= sub["CLASE_NORM"].eq("CAPITULO")
-    libros = mask_lib.sum()
-    if usar_total_caps:
-        caps_df = sub.loc[mask_cap].copy()
-        caps_df["_den"] = pd.to_numeric(caps_df["TOTAL_CAPITULOS"], errors="coerce")
-        caps_df["_w"]   = 1.0 / caps_df["_den"]
-        caps_w = caps_df["_w"].where(~caps_df["_w"].isna() & np.isfinite(caps_df["_w"]),
-                                     other=float(factor_cap)).sum()
-    else:
-        caps_w = mask_cap.sum()*float(factor_cap)
-    return libros, caps_w
+    # Libros completos
+    libros = float(sub["CLASE_NORM"].eq("LIBRO").sum())
 
-agg = (calc_tot.groupby("FACULTAD")
-       .apply(lambda g: pd.Series(lcl_fac(g), index=["Libros","Capítulos (pond.)"]))
-       .reset_index())
-lcl_long = agg.melt("FACULTAD", var_name="Tipo", value_name="n")
-chart_lcl = alt.Chart(lcl_long).mark_bar().encode(
-    x=alt.X("FACULTAD:N"),
-    y=alt.Y("n:Q", title="Contribución LCL"),
-    color=alt.Color("Tipo:N",
-    scale=alt.Scale(domain=["Libros","Capítulos (pond.)"],
-    range=["#2E7D32","#81C784"]))
-).properties(title="LCL por Facultad (Libros + Capítulos ponderados)")
-st.altair_chart(chart_lcl, use_container_width=True)
+    # Capítulos por libro (agrupado)
+    caps_df = sub.loc[sub["CLASE_NORM"].eq("CAPITULO")].copy()
+    if caps_df.empty:
+        return libros, 0.0
+
+    def _norm_key(s):
+        s = "" if pd.isna(s) else str(s).strip().lower()
+        s = (s.replace("á","a").replace("é","e").replace("í","i")
+               .replace("ó","o").replace("ú","u").replace("ñ","n"))
+        s = " ".join(s.split())
+        return s
+
+    candidates = []
+    if "DOI_LIBRO" in caps_df.columns:     candidates.append(caps_df["DOI_LIBRO"].map(_norm_key))
+    if "ISBN" in caps_df.columns:          candidates.append(caps_df["ISBN"].map(_norm_key))
+    if "TITULO_LIBRO" in caps_df.columns:  candidates.append(caps_df["TITULO_LIBRO"].map(_norm_key))
+    if "LIBRO" in caps_df.columns:         candidates.append(caps_df["LIBRO"].map(_norm_key))
+
+    if "PUBLICACIÓN" in caps_df.columns:
+        pub_base = caps_df["PUBLICACIÓN"].astype(str).str.lower()
+        pub_base = pub_base.str.replace(r"cap[ií]tulo.*", "", regex=True).str.replace(r"chapter.*", "", regex=True)
+        candidates.append(pub_base.map(_norm_key))
+
+    if candidates:
+        BOOK_KEY = candidates[0].copy()
+        for c in candidates[1:]:
+            BOOK_KEY = np.where((BOOK_KEY == "") & (c != ""), c, BOOK_KEY)
+    else:
+        BOOK_KEY = (caps_df.get("REVISTA","").astype(str).str.lower().fillna("") + " | " +
+                    caps_df.get("AÑO","").astype(str).fillna(""))
+
+    caps_df["_BOOK_KEY"] = BOOK_KEY
+    caps_df["_den"] = pd.to_numeric(caps_df["TOTAL_CAPITULOS"], errors="coerce")
+
+    grp = (caps_df
+           .groupby("_BOOK_KEY", dropna=False)
+           .agg(
+               caps_ua=("PUBLICACIÓN", "size"),
+               den_book=("_den", lambda s: s.dropna().iloc[0] if s.dropna().size else np.nan)
+           )
+           .reset_index())
+
+    grp["w_book"] = np.where((grp["den_book"] > 0) & np.isfinite(grp["den_book"]),
+                             grp["caps_ua"] / grp["den_book"],
+                             grp["caps_ua"] * float(factor_cap))
+
+    caps_w = float(grp["w_book"].sum())
+    return float(libros), float(caps_w)
 
 # auditoría
 audit_caps = caps_all.loc[caps_all["_den"].isna(), ["FACULTAD","PUBLICACIÓN","TOTAL_CAPITULOS"]].head(30)
