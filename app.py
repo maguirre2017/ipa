@@ -431,10 +431,10 @@ lcl = libros + caps
 
 
     # PPI
-    ppi = float(subdf["CLASE_NORM"].eq("PPI").sum())
+ppi = float(subdf["CLASE_NORM"].eq("PPI").sum())
 
-    numerador = ppc + ppa + lcl + ppi
-    return numerador, ppc_rows, ppa, lcl, ppi, n_aplicados
+numerador = ppc + ppa + lcl + ppi
+return numerador, ppc_rows, ppa, lcl, ppi, n_aplicados
 
 # ------------------ Denominador ------------------
 def den_val(ptc, pmt):
