@@ -757,14 +757,64 @@ chart_art_proc = (
 )
 st.altair_chart(chart_art_proc, use_container_width=True)
 # grafico nuevo 2 ojoooooo
-tot_libros = int((vis["CLASE_NORM"].astype(str).str.upper() == "LIBRO").sum())
-# Detección robusta de capítulos por clase y, como respaldo, por texto
-mask_cap = (vis["CLASE_NORM"].astype(str).str.upper() == "CAPITULO")
-if "TIPO" in vis.columns:
-    mask_cap = mask_cap | vis["TIPO"].astype(str).str.contains(r"cap[ií]tulo|chapter", case=False, na=False)
-if "PUBLICACIÓN" in vis.columns:
-    mask_cap = mask_cap | vis["PUBLICACIÓN"].astype(str).str.contains(r"cap[ií]tulo|chapter", case=False, na=False)
-tot_caps = int(mask_cap.sum())
+# --- Totales globales (Libros vs Capítulos) DEDUPLICADOS ---
+import unicodedata, re
+
+def _norm_key(s):
+    s = "" if pd.isna(s) else str(s).strip().lower()
+    s = (s.replace("á","a").replace("é","e").replace("í","i")
+           .replace("ó","o").replace("ú","u").replace("ñ","n"))
+    s = " ".join(s.split())
+    return s
+
+def _book_key(df_):
+    # Prioridades para identificar el libro
+    candidates = []
+    for col in ["DOI_LIBRO","ISBN","TITULO_LIBRO","LIBRO"]:
+        if col in df_.columns:
+            candidates.append(df_[col].map(_norm_key))
+    # Heurística desde PUBLICACIÓN si no hay columnas específicas
+    if "PUBLICACIÓN" in df_.columns:
+        pub_base = df_["PUBLICACIÓN"].astype(str).str.lower()
+        pub_base = pub_base.str.replace(r"cap[ií]tulo.*", "", regex=True).str.replace(r"chapter.*", "", regex=True)
+        candidates.append(pub_base.map(_norm_key))
+    # Combine: primera no vacía gana
+    if candidates:
+        key = candidates[0].copy()
+        for c in candidates[1:]:
+            key = np.where((key == "") & (c != ""), c, key)
+        return pd.Series(key, index=df_.index)
+    # Último recurso
+    return (df_.get("REVISTA","").astype(str).str.lower().fillna("") + " | " +
+            df_.get("AÑO","").astype(str).fillna("")).map(_norm_key)
+
+# Libros deduplicados por BOOK_KEY
+libros_df = vis.loc[vis["CLASE_NORM"].astype(str).str.upper().eq("LIBRO")].copy()
+if not libros_df.empty:
+    libros_df["_BOOK_KEY"] = _book_key(libros_df)
+    tot_libros = int(pd.Series(libros_df["_BOOK_KEY"]).dropna().unique().size)
+else:
+    tot_libros = 0
+
+# Capítulos deduplicados por (BOOK_KEY, CHAP_KEY)
+caps_df = vis.loc[vis["CLASE_NORM"].astype(str).str.upper().eq("CAPITULO")].copy()
+if not caps_df.empty:
+    caps_df["_BOOK_KEY"] = _book_key(caps_df)
+    # Clave de capítulo (use PUBLICACIÓN o título de capítulo si existe otra columna)
+    chap_col = "PUBLICACIÓN" if "PUBLICACIÓN" in caps_df.columns else None
+    if chap_col:
+        caps_df["_CHAP_KEY"] = caps_df[chap_col].map(_norm_key)
+    else:
+        # Respaldo: combinación de índice y año (menos ideal, pero evita dobles conteos triviales)
+        caps_df["_CHAP_KEY"] = (
+            caps_df["_BOOK_KEY"].astype(str) + " | " +
+            caps_df.get("AÑO","").astype(str)
+        ).map(_norm_key)
+    # Deduplicado por pares únicos (libro, capítulo)
+    tot_caps = int(caps_df.dropna(subset=["_BOOK_KEY","_CHAP_KEY"])
+                           .drop_duplicates(subset=["_BOOK_KEY","_CHAP_KEY"]).shape[0])
+else:
+    tot_caps = 0
 
 tot_lcl_simple = pd.DataFrame({
     "Tipo": ["Libros","Capítulos de libro"],
@@ -785,7 +835,6 @@ chart_lcl_tot = (
       .properties(title="Totales globales (Libros vs Capítulos de libro)")
 )
 st.altair_chart(chart_lcl_tot, use_container_width=True)
-
 
 # --- tarjeta φ_base (promedio global del subconjunto) y PPC (suma de λ) en la misma fila ---
 vis_phi = vis.copy()
@@ -833,6 +882,7 @@ with col2:
 
 
 # ------------------ Tabla final filtrable ------------------
+# ------------------ Tabla final filtrable ------------------
 st.subheader("Tabla de publicaciones consideradas (primer autor)")
 year_tab = st.multiselect("Año (tabla)", years_all, default=year_vis_sel or years_all, key="tab_years")
 vinc_tab = st.multiselect("Tipo de vinculación (tabla)",
@@ -845,11 +895,61 @@ if year_tab:
 if vinc_tab:
     tab = tab[tab["VINCULACION_PUB"].isin(vinc_tab)]
 
-cols_show = ["AÑO","SEDE","FACULTAD","CARRERA","PRIMER_AUTOR","VINCULACION_PUB",
-             "PUBLICACIÓN","REVISTA","CUARTIL","INDEXACIÓN","CLASE_NORM","DOI","URL"]
+# --- Clasificación amigable para "Tipo de publicación" ---
+def _tipo_publicacion_row(row):
+    # Si ya existe la función global (del bloque de gráficos), úsela
+    if '_class_pub_for_fac' in globals() and callable(globals()['_class_pub_for_fac']):
+        return globals()['_class_pub_for_fac'](row)
+
+    # Fallback local (coincide con la lógica usada en los gráficos)
+    import re, unicodedata
+    def _norm(s: str) -> str:
+        s = str(s or "").strip().upper()
+        s = unicodedata.normalize("NFD", s)
+        s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+        s = re.sub(r"\s+", " ", s)
+        return s
+
+    clase = _norm(row.get("CLASE_NORM", ""))
+    cu    = _norm(row.get("CUARTIL", ""))
+    idx   = _norm(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
+
+    # Capítulos
+    if re.search(r"\b(CAPITULO|BOOK CHAPTER|CHAPTER IN BOOK|PART OF BOOK)\b", clase):
+        return "Capítulos de libro"
+
+    # Libros
+    if re.search(r"\b(LIBRO|BOOK)\b", clase):
+        return "Libros"
+
+    # Proceedings en Scopus/WoS (ACI)
+    if "PROCEEDINGS" in clase and (("SCOPUS" in idx) or ("WOS" in idx) or ("WEB OF SCIENCE" in idx)):
+        return "Proceedings en Scopus/WoS (ACI)"
+
+    # Artículos por calidad/base
+    if re.search(r"\b(ARTICULO|ARTICLE)\b", clase):
+        if cu in {"Q1","Q2","Q3","Q4"} or ("SCOPUS" in idx or "WOS" in idx or "WEB OF SCIENCE" in idx):
+            return "Artículos en bases de impacto"
+        if "LATINDEX" in idx and "CATALOGO" in idx:
+            return "Artículos Latindex Catálogo"
+        if idx not in {"", "NO REGISTRADO", "NAN"}:
+            return "Artículos Bases Regionales"
+
+    return "Otros"
+
+tab["TIPO_PUBLICACION"] = tab.apply(_tipo_publicacion_row, axis=1)
+
+cols_show = [
+    "AÑO","SEDE","FACULTAD","CARRERA","PRIMER_AUTOR","VINCULACION_PUB",
+    "PUBLICACIÓN","REVISTA","CUARTIL","INDEXACIÓN","CLASE_NORM","TIPO_PUBLICACION","DOI","URL"
+]
+# Filtrar por si alguna columna faltara en el archivo
+cols_show = [c for c in cols_show if c in tab.columns]
+
 tab = tab[cols_show].rename(columns={
     "PRIMER_AUTOR": "DOCENTE (primer autor)",
-    "VINCULACION_PUB": "VINCULACION"
+    "VINCULACION_PUB": "VINCULACION",
+    "TIPO_PUBLICACION": "TIPO DE PUBLICACIÓN"
 })
 st.dataframe(tab, use_container_width=True)
 
@@ -873,3 +973,4 @@ st.caption(
     "(3) Interculturalidad: opción de +0.21 aplicada hasta el 21% del total de artículos PPC. "
     "(4) Se ha utilizado deduplicación para evitar doble conteo por coautorías."
 )
+
