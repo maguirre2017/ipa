@@ -758,7 +758,8 @@ chart_art_proc = (
 st.altair_chart(chart_art_proc, use_container_width=True)
 # grafico nuevo 2 ojoooooo
 # --- Totales globales (Libros vs Capítulos) DEDUPLICADOS ---
-import unicodedata, re
+# --- Totales globales (Libros vs Capítulos) DEDUPLICADOS ---
+import re, unicodedata
 
 def _norm_key(s):
     s = "" if pd.isna(s) else str(s).strip().lower()
@@ -770,13 +771,14 @@ def _norm_key(s):
 def _book_key(df_):
     # Prioridades para identificar el libro
     candidates = []
-    for col in ["DOI_LIBRO","ISBN","TITULO_LIBRO","LIBRO"]:
+    for col in ["DOI_LIBRO", "ISBN", "TITULO_LIBRO", "LIBRO"]:
         if col in df_.columns:
             candidates.append(df_[col].map(_norm_key))
     # Heurística desde PUBLICACIÓN si no hay columnas específicas
     if "PUBLICACIÓN" in df_.columns:
         pub_base = df_["PUBLICACIÓN"].astype(str).str.lower()
-        pub_base = pub_base.str.replace(r"cap[ií]tulo.*", "", regex=True).str.replace(r"chapter.*", "", regex=True)
+        pub_base = pub_base.str.replace(r"cap[ií]tulo.*", "", regex=True)
+        pub_base = pub_base.str.replace(r"chapter.*", "", regex=True)
         candidates.append(pub_base.map(_norm_key))
     # Combine: primera no vacía gana
     if candidates:
@@ -785,10 +787,10 @@ def _book_key(df_):
             key = np.where((key == "") & (c != ""), c, key)
         return pd.Series(key, index=df_.index)
     # Último recurso
-    return (df_.get("REVISTA","").astype(str).str.lower().fillna("") + " | " +
-            df_.get("AÑO","").astype(str).fillna("")).map(_norm_key)
+    return (df_.get("REVISTA", "").astype(str).str.lower().fillna("") + " | " +
+            df_.get("AÑO", "").astype(str).fillna("")).map(_norm_key)
 
-# Libros deduplicados por BOOK_KEY
+# --- LIBROS (deduplicados por BOOK_KEY) ---
 libros_df = vis.loc[vis["CLASE_NORM"].astype(str).str.upper().eq("LIBRO")].copy()
 if not libros_df.empty:
     libros_df["_BOOK_KEY"] = _book_key(libros_df)
@@ -796,28 +798,51 @@ if not libros_df.empty:
 else:
     tot_libros = 0
 
-# Capítulos deduplicados por (BOOK_KEY, CHAP_KEY)
-caps_df = vis.loc[vis["CLASE_NORM"].astype(str).str.upper().eq("CAPITULO")].copy()
+# --- CAPÍTULOS (detección robusta + deduplicado por (BOOK_KEY, CHAP_KEY)) ---
+caps_df = vis.copy()
+
+# Detección robusta de capítulos: CLASE_NORM o texto en CLASE/TIPO/PUBLICACIÓN
+mask_cap = caps_df["CLASE_NORM"].astype(str).str.upper().eq("CAPITULO")
+if "CLASE" in caps_df.columns:
+    mask_cap |= caps_df["CLASE"].astype(str).str.contains(r"cap[ií]tulo|chapter", case=False, na=False)
+if "TIPO" in caps_df.columns:
+    mask_cap |= caps_df["TIPO"].astype(str).str.contains(r"cap[ií]tulo|chapter", case=False, na=False)
+if "PUBLICACIÓN" in caps_df.columns:
+    mask_cap |= caps_df["PUBLICACIÓN"].astype(str).str.contains(r"cap[ií]tulo|chapter", case=False, na=False)
+
+caps_df = caps_df.loc[mask_cap].copy()
+
 if not caps_df.empty:
+    # BOOK_KEY para capítulos
     caps_df["_BOOK_KEY"] = _book_key(caps_df)
-    # Clave de capítulo (use PUBLICACIÓN o título de capítulo si existe otra columna)
-    chap_col = "PUBLICACIÓN" if "PUBLICACIÓN" in caps_df.columns else None
-    if chap_col:
-        caps_df["_CHAP_KEY"] = caps_df[chap_col].map(_norm_key)
+
+    # CHAP_KEY: mejor columna disponible para identificar el capítulo
+    chap_cols = [c for c in ["TITULO_CAPITULO","CAPITULO","TITULO","TÍTULO","PUBLICACIÓN"] if c in caps_df.columns]
+    if chap_cols:
+        # primera columna válida con texto no vacío
+        chap_series = None
+        for c in chap_cols:
+            s = caps_df[c].astype(str).str.strip()
+            if chap_series is None:
+                chap_series = s.where(s.ne(""), other=np.nan)
+            else:
+                chap_series = chap_series.fillna(s.where(s.ne(""), other=np.nan))
+        caps_df["_CHAP_KEY"] = chap_series.map(_norm_key)
     else:
-        # Respaldo: combinación de índice y año (menos ideal, pero evita dobles conteos triviales)
-        caps_df["_CHAP_KEY"] = (
-            caps_df["_BOOK_KEY"].astype(str) + " | " +
-            caps_df.get("AÑO","").astype(str)
-        ).map(_norm_key)
+        # Respaldo pobre pero seguro (evita 0): use índice como “clave”
+        caps_df["_CHAP_KEY"] = caps_df.index.astype(str).map(_norm_key)
+
+    # Elimine filas sin clave de libro o capítulo
+    caps_df = caps_df.dropna(subset=["_BOOK_KEY", "_CHAP_KEY"])
+
     # Deduplicado por pares únicos (libro, capítulo)
-    tot_caps = int(caps_df.dropna(subset=["_BOOK_KEY","_CHAP_KEY"])
-                           .drop_duplicates(subset=["_BOOK_KEY","_CHAP_KEY"]).shape[0])
+    tot_caps = int(caps_df.drop_duplicates(subset=["_BOOK_KEY", "_CHAP_KEY"]).shape[0])
 else:
     tot_caps = 0
 
+# --- Gráfico ---
 tot_lcl_simple = pd.DataFrame({
-    "Tipo": ["Libros","Capítulos de libro"],
+    "Tipo": ["Libros", "Capítulos de libro"],
     "Total": [tot_libros, tot_caps],
 })
 
@@ -835,6 +860,10 @@ chart_lcl_tot = (
       .properties(title="Totales globales (Libros vs Capítulos de libro)")
 )
 st.altair_chart(chart_lcl_tot, use_container_width=True)
+
+# (Opcional) Muestra contadores como caption para auditar
+st.caption(f"Libros únicos: {tot_libros} | Capítulos únicos: {tot_caps}")
+
 
 # --- tarjeta φ_base (promedio global del subconjunto) y PPC (suma de λ) en la misma fila ---
 vis_phi = vis.copy()
