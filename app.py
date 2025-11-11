@@ -912,52 +912,50 @@ with col2:
 
 # ------------------ Tabla final filtrable ------------------
 # ------------------ Tabla final filtrable ------------------
+# ------------------ Tabla final filtrable ------------------
 st.subheader("Tabla de publicaciones consideradas (primer autor)")
-year_tab = st.multiselect("Año (tabla)", years_all, default=year_vis_sel or years_all, key="tab_years")
-vinc_tab = st.multiselect("Tipo de vinculación (tabla)",
-                          ["NOMBRAMIENTO","OCASIONAL"],
-                          default=["NOMBRAMIENTO","OCASIONAL"])
 
-tab = vis.copy()
+# Filtros de la tabla (amplíe vinculación para no excluir casos)
+year_tab = st.multiselect("Año (tabla)", years_all, default=year_vis_sel or years_all, key="tab_years")
+
+vinciones_disponibles = ["NOMBRAMIENTO","OCASIONAL","SIN VINCULACION"]
+vinc_tab = st.multiselect(
+    "Tipo de vinculación (tabla)",
+    vinciones_disponibles,
+    default=vinciones_disponibles
+)
+
+# Use SIEMPRE el df ya deduplicado (no 'vis') para no heredar el filtro por TIPO
+tab = df.copy()
 if year_tab:
     tab = tab[tab["AÑO"].isin(year_tab)]
 if vinc_tab:
     tab = tab[tab["VINCULACION_PUB"].isin(vinc_tab)]
 
-# --- Clasificación amigable para "Tipo de publicación" ---
+# Etiqueta amigable de tipo (igual que en las visualizaciones)
 def _tipo_publicacion_row(row):
-    # Si ya existe la función global (del bloque de gráficos), úsela
-    if '_class_pub_for_fac' in globals() and callable(globals()['_class_pub_for_fac']):
-        return globals()['_class_pub_for_fac'](row)
-
-    # Fallback local (coincide con la lógica usada en los gráficos)
     import re, unicodedata
     def _norm(s: str) -> str:
         s = str(s or "").strip().upper()
         s = unicodedata.normalize("NFD", s)
         s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
-        s = re.sub(r"\s+", " ", s)
-        return s
+        return re.sub(r"\s+", " ", s)
 
-    clase = _norm(row.get("CLASE_NORM", ""))
-    cu    = _norm(row.get("CUARTIL", ""))
-    idx   = _norm(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
+    clase = _norm(row.get("CLASE_NORM",""))
+    cu    = _norm(row.get("CUARTIL",""))
+    idx   = _norm(row.get("INDEXACIÓN","") or row.get("INDEXACION",""))
 
-    # Capítulos
-    if re.search(r"\b(CAPITULO|BOOK CHAPTER|CHAPTER IN BOOK|PART OF BOOK)\b", clase):
-        return "Capítulos de libro"
+    # Capítulos y Libros
+    if "CAPITULO" in clase or "BOOK CHAPTER" in clase or "CHAPTER IN BOOK" in clase: return "Capítulos de libro"
+    if "LIBRO" in clase or "BOOK" in clase: return "Libros"
 
-    # Libros
-    if re.search(r"\b(LIBRO|BOOK)\b", clase):
-        return "Libros"
-
-    # Proceedings en Scopus/WoS (ACI)
-    if "PROCEEDINGS" in clase and (("SCOPUS" in idx) or ("WOS" in idx) or ("WEB OF SCIENCE" in idx)):
+    # Proceedings ACI (Scopus/WoS o cuartil)
+    if "PROCEEDINGS" in clase and (any(k in idx for k in ["SCOPUS","WOS","WEB OF SCIENCE"]) or cu in {"Q1","Q2","Q3","Q4"}):
         return "Proceedings en Scopus/WoS (ACI)"
 
-    # Artículos por calidad/base
-    if re.search(r"\b(ARTICULO|ARTICLE)\b", clase):
-        if cu in {"Q1","Q2","Q3","Q4"} or ("SCOPUS" in idx or "WOS" in idx or "WEB OF SCIENCE" in idx):
+    # Artículos
+    if "ARTICULO" in clase or "ARTICLE" in clase:
+        if cu in {"Q1","Q2","Q3","Q4"} or any(k in idx for k in ["SCOPUS","WOS","WEB OF SCIENCE"]):
             return "Artículos en bases de impacto"
         if "LATINDEX" in idx and "CATALOGO" in idx:
             return "Artículos Latindex Catálogo"
@@ -966,20 +964,32 @@ def _tipo_publicacion_row(row):
 
     return "Otros"
 
-tab["TIPO_PUBLICACION"] = tab.apply(_tipo_publicacion_row, axis=1)
+tab["TIPO DE PUBLICACIÓN"] = tab.apply(_tipo_publicacion_row, axis=1)
 
+# Marcas rápidas: Proceedings ACI y Capítulos (para auditoría visual)
+tab["ES_PROCEEDINGS_ACI"] = (
+    (tab["CLASE_NORM"].astype(str).str.upper().eq("PROCEEDINGS")) &
+    (
+        tab["INDEXACIÓN"].astype(str).str.contains("SCOPUS|WOS|WEB OF SCIENCE", case=False, na=False) |
+        tab["CUARTIL"].astype(str).str.fullmatch("Q[1-4]", case=False, na=False)
+    )
+)
+tab["ES_CAPITULO"] = tab["CLASE_NORM"].astype(str).str.upper().eq("CAPITULO")
+
+# Columnas a mostrar
 cols_show = [
     "AÑO","SEDE","FACULTAD","CARRERA","PRIMER_AUTOR","VINCULACION_PUB",
-    "PUBLICACIÓN","REVISTA","CUARTIL","INDEXACIÓN","CLASE_NORM","TIPO_PUBLICACION","DOI","URL"
+    "PUBLICACIÓN","REVISTA","CUARTIL","INDEXACIÓN","CLASE_NORM","TIPO DE PUBLICACIÓN",
+    "ES_PROCEEDINGS_ACI","ES_CAPITULO","DOI","URL"
 ]
-# Filtrar por si alguna columna faltara en el archivo
-cols_show = [c for c in cols_show if c in tab.columns]
+cols_show = [c for c in cols_show if c in tab.columns]  # por seguridad
 
+# Renombres finales
 tab = tab[cols_show].rename(columns={
     "PRIMER_AUTOR": "DOCENTE (primer autor)",
-    "VINCULACION_PUB": "VINCULACION",
-    "TIPO_PUBLICACION": "TIPO DE PUBLICACIÓN"
+    "VINCULACION_PUB": "VINCULACION"
 })
+
 st.dataframe(tab, use_container_width=True)
 
 # ------------------ Detalle de PPC (φ base y λ final) ------------------
@@ -995,6 +1005,11 @@ else:
     st.info("No hay artículos/proceedings en el periodo de cálculo para mostrar detalle.")
     
 st.divider()
+st.caption(
+    "La tabla incluye todas las clases deduplicadas por DOI/Título (primer autor). "
+    "Proceedings ACI = proceedings indexados (Scopus/WoS o cuartil)."
+)
+
 st.caption(
     "Notas: Consideraciones tomadas en cuenta "
     "(1) Proceedings cuentan en PPC solo si están indexados (Scopus/WoS). "
