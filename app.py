@@ -579,28 +579,26 @@ def _norm(s: str) -> str:
     s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")  # sin tildes
     s = re.sub(r"\s+", " ", s)
     return s
-
 def _class_pub_for_fac(row):
     clase = _norm(row.get("CLASE_NORM", ""))
     cu    = _norm(row.get("CUARTIL", ""))
     idx   = _norm(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
 
-    # --- detectar capítulos de libro (ES/EN) ---
-    # Casos típicos: "CAPITULO DE LIBRO", "LIBRO: CAPITULO", "BOOK CHAPTER", "CHAPTER IN BOOK", "PART OF BOOK"
+    # Capítulos
     if re.search(r"\b(CAPITULO|BOOK CHAPTER|CHAPTER IN BOOK|PART OF BOOK)\b", clase):
         return "Capítulos de libro"
 
-    # Libros (solo libro completo, ya excluidos los capítulos arriba)
+    # Libros
     if re.search(r"\b(LIBRO|BOOK)\b", clase):
         return "Libros"
 
-    # Proceedings en Scopus
-    if "PROCEEDINGS" in clase and "SCOPUS" in idx:
-        return "Proceedings en Scopus"
+    # Proceedings en Scopus/WoS (ACI)
+    if "PROCEEDINGS" in clase and (("SCOPUS" in idx) or ("WOS" in idx) or ("WEB OF SCIENCE" in idx)):
+        return "Proceedings en Scopus/WoS (ACI)"
 
     # Artículos por calidad / base
     if re.search(r"\b(ARTICULO|ARTICLE)\b", clase):
-        if cu in {"Q1", "Q2", "Q3", "Q4"} or ("SCOPUS" in idx or "WOS" in idx or "WEB OF SCIENCE" in idx):
+        if cu in {"Q1","Q2","Q3","Q4"} or ("SCOPUS" in idx or "WOS" in idx or "WEB OF SCIENCE" in idx):
             return "Artículos en bases de impacto"
         if "LATINDEX" in idx and "CATALOGO" in idx:
             return "Artículos Latindex Catálogo"
