@@ -744,12 +744,6 @@ with c_phi:
         help=f"Mediana: {phi_median:.3f} | Registros: {n_phi}"
     )
 
-# --- tabla de reglas (estática) ---
-rules = pd.DataFrame({
- "Condición": ["Q1","Q2","Q3","Q4","Scopus/WoS","Latindex Catálogo","Otras bases","Sin indexación"],
- "φ_base": [1.0,0.9,0.8,0.7,0.6,0.2,0.5,0.0]
-})
-st.dataframe(rules, use_container_width=True)
 
 # --- preparar PPC (de su cálculo existente) ---
 ppc = ppc_tot_rows.copy()  # salida de numerador_IIPA(...)
@@ -780,13 +774,6 @@ with c_ppc:
         help=f"φ_base total: {ppc_base:.3f} | 21% aplicado a {n_aplicados}/{limite_21} publicaciones"
     )
 
-
-
-# --- Top incrementos ---
-top_gain = (ppc.loc[ppc["lambda"].gt(ppc["phi_base"]), ["FACULTAD","phi_base","lambda"]]
-              .assign(gain=lambda d: d["lambda"] - d["phi_base"])
-              .sort_values("gain", ascending=False).head(15))
-st.dataframe(top_gain, use_container_width=True)
 
 # ------------------ Tabla final filtrable ------------------
 st.subheader("Tabla de publicaciones consideradas (primer autor)")
