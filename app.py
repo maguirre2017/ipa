@@ -465,19 +465,8 @@ iipa_nom = (num_nom / den_nom) if den_nom > 0 else np.nan
 iipa_oca = (num_oca / den_oca) if den_oca > 0 else np.nan
 iipa_tot = (num_tot / den_tot) if den_tot > 0 else np.nan
 
-# ------------------ KPIs ------------------
-c1, c2, c3 = st.columns(3)
-c1.metric("IIPA — Nombramiento", f"{iipa_nom:.3f}" if not np.isnan(iipa_nom) else "—",
-          help=f"Numerador: {num_nom:.2f} | Den: {den_nom:.2f} | 21% aplicado a {n_ap_nom} artículos.")
-c2.metric("IIPA — Ocasional", f"{iipa_oca:.3f}" if not np.isnan(iipa_oca) else "—",
-          help=f"Numerador: {num_oca:.2f} | Den: {den_oca:.2f} | 21% aplicado a {n_ap_oca} artículos.")
-c3.metric("IIPA — Total", f"{iipa_tot:.3f}" if not np.isnan(iipa_tot) else "—",
-          help=f"Numerador: {num_tot:.2f} | Den: {den_tot:.2f} | 21% aplicado a {n_ap_tot} artículos.")
 
 # ------------------ Visualización ------------------
-st.divider()
-st.subheader("Exploración de publicaciones ")
-
 vis = df.copy()
 vis = vis[vis["AÑO"].isin(year_vis_sel)] if year_vis_sel else vis
 vis = vis[vis["FACULTAD"].isin(fac_sel)] if fac_sel else vis
@@ -489,7 +478,7 @@ vis = vis[vis["SEDE"].isin(sede_sel)]    if sede_sel else vis
 green_scale = alt.Scale(range=["#1B5E20", "#2E7D32", "#43A047", "#66BB6A", "#81C784", "#A5D6A7", "#C8E6C9"])
 
 # ------------------ Tendencia de publicación (Nombramiento) por año, facultad y carrera ------------------
-st.subheader("Tendencia de publicación (Nombramiento) por año, facultad y carrera")
+st.subheader("Tendencia de publicación de Docentes con Nombramiento por año, facultad y carrera")
 
 # Base coherente con los filtros globales del dashboard
 trend_base = slice_df(df, year_vis_sel, fac_sel, car_sel, tipo_sel, sede_sel)
@@ -575,8 +564,9 @@ else:
               )
         )
         st.altair_chart(chart_trend_car_alt, use_container_width=True)
+
 # ------------------ Tendencia de publicación (Ocasional) por año y facultad ------------------
-st.subheader("Tendencia de publicación por año y facultad (Docentes Ocasionales)")
+st.subheader("Tendencia de publicación de Docentes Ocasionales por año y facultad")
 
 # Base coherente con los filtros globales del dashboard
 trend_base_oca = slice_df(df, year_vis_sel, fac_sel, car_sel, tipo_sel, sede_sel)
@@ -629,6 +619,9 @@ else:
         )
 
         st.altair_chart(chart_trend_fac_oca, use_container_width=True)
+
+st.divider()
+st.subheader("Exploración de publicaciones ")
 
 # Publicaciones por año (apilado por vinculación)
 by_year_vinc = vis.groupby(["AÑO","VINCULACION_PUB"]).size().reset_index(name="Publicaciones")
@@ -1010,6 +1003,14 @@ with col2:
         f"{ppc_val:.3f}" if not np.isnan(ppc_val) else "—",
         help=f"φ_base total: {ppc_base:.3f} | 21% aplicado a {n_aplicados}/{limite_21} publicaciones"
     )
+# ------------------ KPIs ------------------
+c1, c2, c3 = st.columns(3)
+c1.metric("IIPA — Nombramiento", f"{iipa_nom:.3f}" if not np.isnan(iipa_nom) else "—",
+          help=f"Numerador: {num_nom:.2f} | Den: {den_nom:.2f} | 21% aplicado a {n_ap_nom} artículos.")
+c2.metric("IIPA — Ocasional", f"{iipa_oca:.3f}" if not np.isnan(iipa_oca) else "—",
+          help=f"Numerador: {num_oca:.2f} | Den: {den_oca:.2f} | 21% aplicado a {n_ap_oca} artículos.")
+c3.metric("IIPA — Total", f"{iipa_tot:.3f}" if not np.isnan(iipa_tot) else "—",
+          help=f"Numerador: {num_tot:.2f} | Den: {den_tot:.2f} | 21% aplicado a {n_ap_tot} artículos.")
 
 # ------------------ Velocímetros (Plotly) ------------------
 def gauge_iipa(valor, titulo):
