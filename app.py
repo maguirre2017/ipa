@@ -640,21 +640,38 @@ chart_year = (
 st.altair_chart(chart_year, use_container_width=True)
 
 # Distribución proporcional por Facultad (por vinculación)
-by_fac_vinc = vis.groupby(["FACULTAD","VINCULACION_PUB"]).size().reset_index(name="Publicaciones")
+by_fac_vinc = vis.groupby(["FACULTAD", "VINCULACION_PUB"]).size().reset_index(name="Publicaciones")
+
 chart_fac_prop = (
     alt.Chart(by_fac_vinc)
       .mark_bar()
       .encode(
           x=alt.X("FACULTAD:N", title="Facultad"),
-          y=alt.Y("sum(Publicaciones):Q", stack="normalize", title="Proporción dentro del total"),
-          color=alt.Color("VINCULACION_PUB:N", title="Vinculación",
-                          scale=alt.Scale(range=["#2E7D32", "#81C784", "#B0BEC5"])),
-          tooltip=["FACULTAD","VINCULACION_PUB","Publicaciones"]
+          y=alt.Y("sum(Publicaciones):Q", stack="normalize",
+                  title="Proporción dentro del total"),
+          color=alt.Color(
+              "VINCULACION_PUB:N",
+              title="Vinculación",
+              scale=alt.Scale(range=["#2E7D32", "#81C784", "#B0BEC5"])
+          ),
+          tooltip=["FACULTAD", "VINCULACION_PUB", "Publicaciones"]
       )
-      .properties(title="Distribución proporcional de publicaciones por Facultad")
-          dy=12  # <-- baja el título, garantizando que se vea completo
+      .properties(
+          title={
+              "text": "Distribución proporcional de publicaciones por Facultad",
+              "anchor": "start",
+              "fontSize": 16,
+              "padding": {"top": 25, "bottom": 10}   # evita corte del título
+          },
+          height=350
+      )
+      .configure_title(
+          dy=12   # baja el título para que sea completamente visible
+      )
 )
+
 st.altair_chart(chart_fac_prop, use_container_width=True)
+
 
 # Heatmap cuartil-año (paleta 'greens')
 vis["_CU"] = vis["CUARTIL"].fillna("SIN CUARTIL").str.upper().str.strip()
