@@ -487,8 +487,6 @@ vis = vis[vis["SEDE"].isin(sede_sel)]    if sede_sel else vis
 
 # Paleta de verdes institucionales para categorías
 green_scale = alt.Scale(range=["#1B5E20", "#2E7D32", "#43A047", "#66BB6A", "#81C784", "#A5D6A7", "#C8E6C9"])
-# ------------------ Tendencia de publicación (Nombramiento) por año, facultad y carrera ------------------
-st.subheader("Tendencia de publicación (Nombramiento) por año, facultad y carrera")
 
 # ------------------ Tendencia de publicación (Nombramiento) por año, facultad y carrera ------------------
 st.subheader("Tendencia de publicación (Nombramiento) por año, facultad y carrera")
@@ -577,73 +575,60 @@ else:
               )
         )
         st.altair_chart(chart_trend_car_alt, use_container_width=True)
+# ------------------ Tendencia de publicación (Ocasional) por año y facultad ------------------
+st.subheader("Tendencia de publicación por año y facultad (Docentes Ocasionales)")
 
-# Solo docentes de nombramiento
-trend_base = trend_base[trend_base["VINCULACION_PUB"].eq("NOMBRAMIENTO")]
+# Base coherente con los filtros globales del dashboard
+trend_base_oca = slice_df(df, year_vis_sel, fac_sel, car_sel, tipo_sel, sede_sel)
 
-if trend_base.empty:
-    st.info("No existen publicaciones de docentes de nombramiento con los filtros actuales.")
+# Solo docentes ocasionales
+trend_base_oca = trend_base_oca[trend_base_oca["VINCULACION_PUB"].eq("OCASIONAL")]
+
+if trend_base_oca.empty:
+    st.info("No existen publicaciones de docentes Ocasionales con los filtros actuales.")
 else:
-    # ---------- Tendencia por FACULTAD ----------
-    trend_fac = (
-        trend_base
-        .dropna(subset=["AÑO","FACULTAD"])
-        .groupby(["AÑO","FACULTAD"])
+    # Paleta verde fuerte (coherente con el resto del dashboard)
+    strong_green_palette = [
+        "#004D00",  # verde oscuro muy saturado
+        "#006600",
+        "#008000",
+        "#009933",
+        "#00B33C",
+        "#00CC66",
+        "#00E68A"
+    ]
+
+    trend_fac_oca = (
+        trend_base_oca
+        .dropna(subset=["AÑO", "FACULTAD"])
+        .groupby(["AÑO", "FACULTAD"])
         .size()
         .reset_index(name="Publicaciones")
     )
 
-    chart_trend_fac = (
-        alt.Chart(trend_fac)
-          .mark_line(point=True, strokeWidth=3)
-          .encode(
-              x=alt.X("AÑO:O", title="Año"),
-              y=alt.Y("Publicaciones:Q", title="N.º de publicaciones"),
-              color=alt.Color(
-                  "FACULTAD:N",
-                  title="Facultad",
-                  scale=alt.Scale(scheme="greens")
-              ),
-              tooltip=["AÑO","FACULTAD","Publicaciones"]
-          )
-          .properties(
-              title="Tendencia de publicaciones por año y facultad (Nombramiento)",
-              height=320
-          )
-    )
-    st.altair_chart(chart_trend_fac, use_container_width=True)
-
-    # ---------- Tendencia por CARRERA ----------
-    trend_car = (
-        trend_base
-        .dropna(subset=["AÑO","CARRERA"])
-        .groupby(["AÑO","CARRERA"])
-        .size()
-        .reset_index(name="Publicaciones")
-    )
-
-    if trend_car.empty:
-        st.info("No hay registros de carrera para mostrar la tendencia por carrera con los filtros actuales.")
+    if trend_fac_oca.empty:
+        st.info("No hay datos por facultad para docentes ocasionales con los filtros actuales.")
     else:
-        chart_trend_car = (
-            alt.Chart(trend_car)
-              .mark_line(point=True, strokeWidth=2)
+        chart_trend_fac_oca = (
+            alt.Chart(trend_fac_oca)
+              .mark_line(point=alt.OverlayMarkDef(size=80, filled=True), strokeWidth=3)
               .encode(
                   x=alt.X("AÑO:O", title="Año"),
                   y=alt.Y("Publicaciones:Q", title="N.º de publicaciones"),
                   color=alt.Color(
-                      "CARRERA:N",
-                      title="Carrera",
-                      scale=alt.Scale(scheme="greens")
+                      "FACULTAD:N",
+                      title="Facultad",
+                      scale=alt.Scale(range=strong_green_palette)
                   ),
-                  tooltip=["AÑO","CARRERA","Publicaciones"]
+                  tooltip=["AÑO", "FACULTAD", "Publicaciones"]
               )
               .properties(
-                  title="Tendencia de publicaciones por año y carrera (Nombramiento)",
-                  height=320
+                  title="Tendencia de publicaciones por año y facultad (Docentes Ocasionales)",
+                  height=330
               )
         )
-        st.altair_chart(chart_trend_car, use_container_width=True)
+
+        st.altair_chart(chart_trend_fac_oca, use_container_width=True)
 
 # Publicaciones por año (apilado por vinculación)
 by_year_vinc = vis.groupby(["AÑO","VINCULACION_PUB"]).size().reset_index(name="Publicaciones")
