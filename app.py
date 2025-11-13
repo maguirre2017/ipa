@@ -620,8 +620,6 @@ else:
 
         st.altair_chart(chart_trend_fac_oca, use_container_width=True)
 # ------------------ Densidad de publicaciones por año y carrera (Ocasional) ------------------
-st.subheader("Densidad de publicaciones por año y carrera (Docentes Ocasionales)")
-
 # Base coherente con los filtros globales del dashboard
 dens_oca = slice_df(df, year_vis_sel, fac_sel, car_sel, tipo_sel, sede_sel)
 
@@ -662,6 +660,53 @@ else:
         )
 
         st.altair_chart(chart_dens_oca, use_container_width=True)
+# ------------------ Tendencia comparativa: Nombramiento vs Ocasional ------------------
+st.subheader("Comparación de tendencia por año: Nombramiento vs Ocasional")
+
+trend_compare = slice_df(df, year_vis_sel, fac_sel, car_sel, tipo_sel, sede_sel)
+
+if trend_compare.empty:
+    st.info("No hay publicaciones con los filtros seleccionados.")
+else:
+    # Contar publicaciones por año y tipo de vinculación
+    trend_comp = (
+        trend_compare
+        .dropna(subset=["AÑO", "VINCULACION_PUB"])
+        .assign(VINCULACION_PUB=lambda d: d["VINCULACION_PUB"].replace({
+            "NOMBRAMIENTO": "Nombramiento",
+            "OCASIONAL": "Ocasional",
+            "SIN VINCULACION": "Sin vinculación"
+        }))
+        .groupby(["AÑO", "VINCULACION_PUB"])
+        .size()
+        .reset_index(name="Publicaciones")
+    )
+
+    # Mantener solo nombramiento y ocasional
+    trend_comp = trend_comp[trend_comp["VINCULACION_PUB"].isin(["Nombramiento", "Ocasional"])]
+
+    strong_palette_two = ["#006400", "#00A651"]  # dos verdes institucionales fuertes
+
+    chart_trend_comp = (
+        alt.Chart(trend_comp)
+            .mark_line(point=alt.OverlayMarkDef(size=80, filled=True), strokeWidth=3)
+            .encode(
+                x=alt.X("AÑO:O", title="Año"),
+                y=alt.Y("Publicaciones:Q", title="Número de publicaciones"),
+                color=alt.Color(
+                    "VINCULACION_PUB:N",
+                    title="Tipo de vinculación",
+                    scale=alt.Scale(range=strong_palette_two)
+                ),
+                tooltip=["AÑO", "VINCULACION_PUB", "Publicaciones"]
+            )
+            .properties(
+                title="Tendencia de publicaciones por año: Nombramiento vs Ocasional",
+                height=350
+            )
+    )
+
+    st.altair_chart(chart_trend_comp, use_container_width=True)
 
 st.divider()
 st.subheader("Exploración de publicaciones ")
