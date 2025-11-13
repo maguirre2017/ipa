@@ -490,10 +490,8 @@ green_scale = alt.Scale(range=["#1B5E20", "#2E7D32", "#43A047", "#66BB6A", "#81C
 # ------------------ Tendencia de publicación (Nombramiento) por año, facultad y carrera ------------------
 st.subheader("Tendencia de publicación (Nombramiento) por año, facultad y carrera")
 
-# Base coherente con los filtros globales del dashboard
-trend_base = slice_df(df, year_vis_sel, fac_sel, car_sel, tipo_sel, sede_sel)
-# ------------------ Tendencia de publicación (Nombramiento) — vista alternativa ------------------
-st.subheader("Tendencia de publicación (Nombramiento) — vista alternativa por facultad y carrera")
+# ------------------ Tendencia de publicación (Nombramiento) por año, facultad y carrera ------------------
+st.subheader("Tendencia de publicación (Nombramiento) por año, facultad y carrera")
 
 # Base coherente con los filtros globales del dashboard
 trend_base = slice_df(df, year_vis_sel, fac_sel, car_sel, tipo_sel, sede_sel)
@@ -504,58 +502,49 @@ trend_base = trend_base[trend_base["VINCULACION_PUB"].eq("NOMBRAMIENTO")]
 if trend_base.empty:
     st.info("No existen publicaciones de docentes de nombramiento con los filtros actuales.")
 else:
-    # ---------- Tendencia por FACULTAD (barras agrupadas con etiquetas) ----------
+
+    # ======================================================
+    #            PALETA VERDE SATURADA Y CONTRASTADA
+    # ======================================================
+    strong_green_palette = [
+        "#004D00",  # verde oscuro muy saturado
+        "#006600",  # verde fuerte
+        "#008000",  # verde clásico fuerte
+        "#009933",  # verde encendido
+        "#00B33C",  # verde vibrante
+        "#00CC66",  # verde brillante
+        "#00E68A"   # verde neon moderado (sigue institucional)
+    ]
+
+    # ---------- Tendencia por FACULTAD ----------
     trend_fac = (
         trend_base
-        .dropna(subset=["AÑO", "FACULTAD"])
-        .groupby(["AÑO", "FACULTAD"])
+        .dropna(subset=["AÑO","FACULTAD"])
+        .groupby(["AÑO","FACULTAD"])
         .size()
         .reset_index(name="Publicaciones")
     )
 
-    if trend_fac.empty:
-        st.info("No hay registros de facultad para mostrar la tendencia alternativa.")
-    else:
-        base_fac = alt.Chart(trend_fac)
+    chart_trend_fac = (
+        alt.Chart(trend_fac)
+          .mark_line(point=alt.OverlayMarkDef(size=80, filled=True), strokeWidth=3)
+          .encode(
+              x=alt.X("AÑO:O", title="Año"),
+              y=alt.Y("Publicaciones:Q", title="N.º de publicaciones"),
+              color=alt.Color(
+                  "FACULTAD:N",
+                  title="Facultad",
+                  scale=alt.Scale(range=strong_green_palette)
+              ),
+              tooltip=["AÑO","FACULTAD","Publicaciones"]
+          )
+          .properties(
+              title="Tendencia de publicaciones por año y facultad (Nombramiento)",
+              height=330
+          )
+    )
 
-        bars_fac = (
-            base_fac
-            .mark_bar()
-            .encode(
-                x=alt.X("AÑO:O", title="Año"),
-                y=alt.Y("Publicaciones:Q", title="N.º de publicaciones"),
-                color=alt.Color(
-                    "FACULTAD:N",
-                    title="Facultad",
-                    scale=alt.Scale(
-                        range=["#1B5E20", "#2E7D32", "#43A047", "#66BB6A", "#81C784", "#A5D6A7", "#C8E6C9"]
-                    )
-                ),
-                tooltip=["AÑO", "FACULTAD", "Publicidades:Q"]
-            )
-        )
-
-        labels_fac = (
-            base_fac
-            .mark_text(dy=-5, size=11)
-            .encode(
-                x=alt.X("AÑO:O"),
-                y=alt.Y("Publicaciones:Q"),
-                detail="FACULTAD:N",
-                text=alt.Text("Publicaciones:Q", format=".0f"),
-                color=alt.value("#1B5E20")
-            )
-        )
-
-        chart_trend_fac_alt = (
-            (bars_fac + labels_fac)
-            .properties(
-                title="Publicaciones por año y facultad (Nombramiento) — barras con etiquetas",
-                height=340
-            )
-        )
-
-        st.altair_chart(chart_trend_fac_alt, use_container_width=True)
+    st.altair_chart(chart_trend_fac, use_container_width=True)
 
     # ---------- Tendencia por CARRERA (heatmap año × carrera) ----------
     trend_car = (
