@@ -474,39 +474,6 @@ c2.metric("IIPA — Ocasional", f"{iipa_oca:.3f}" if not np.isnan(iipa_oca) else
 c3.metric("IIPA — Total", f"{iipa_tot:.3f}" if not np.isnan(iipa_tot) else "—",
           help=f"Numerador: {num_tot:.2f} | Den: {den_tot:.2f} | 21% aplicado a {n_ap_tot} artículos.")
 
-# ------------------ Velocímetros (Plotly) ------------------
-def gauge_iipa(valor, titulo):
-    max_gauge = 2.0
-    if np.isnan(valor): valor = 0.0
-    steps = [
-        {"range": [0.0, 0.5], "color": "#E57373"},   # Deficiente
-        {"range": [0.5, 1.0], "color": "#FBC02D"},   # Poco satisfactorio
-        {"range": [1.0, 1.5], "color": "#FFD54F"},   # Cuasi satisfactorio
-        {"range": [1.5, max_gauge], "color": "#66BB6A"}  # Satisfactorio
-    ]
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=float(valor),
-        number={"valueformat": ".2f"},
-        gauge={
-            "axis": {"range": [0, max_gauge]},
-            "bar": {"color": "#455A64"},
-            "steps": steps,
-            "threshold": {"line": {"color": "#2E7D32", "width": 4}, "value": 1.5}
-        },
-        title={"text": f"{titulo}", "font": {"size": 14}}
-    ))
-    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=220)
-    return fig
-
-g1, g2, g3 = st.columns(3)
-with g1:
-    st.plotly_chart(gauge_iipa(iipa_nom, "IIPA — Nombramiento"), use_container_width=True)
-with g2:
-    st.plotly_chart(gauge_iipa(iipa_oca, "IIPA — Ocasional"), use_container_width=True)
-with g3:
-    st.plotly_chart(gauge_iipa(iipa_tot, "IIPA — Total"), use_container_width=True)
-
 # ------------------ Visualización ------------------
 st.divider()
 st.subheader("Exploración de publicaciones (visualización)")
@@ -905,7 +872,38 @@ with col2:
         help=f"φ_base total: {ppc_base:.3f} | 21% aplicado a {n_aplicados}/{limite_21} publicaciones"
     )
 
+# ------------------ Velocímetros (Plotly) ------------------
+def gauge_iipa(valor, titulo):
+    max_gauge = 2.0
+    if np.isnan(valor): valor = 0.0
+    steps = [
+        {"range": [0.0, 0.5], "color": "#E57373"},   # Deficiente
+        {"range": [0.5, 1.0], "color": "#FBC02D"},   # Poco satisfactorio
+        {"range": [1.0, 1.5], "color": "#FFD54F"},   # Cuasi satisfactorio
+        {"range": [1.5, max_gauge], "color": "#66BB6A"}  # Satisfactorio
+    ]
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=float(valor),
+        number={"valueformat": ".2f"},
+        gauge={
+            "axis": {"range": [0, max_gauge]},
+            "bar": {"color": "#455A64"},
+            "steps": steps,
+            "threshold": {"line": {"color": "#2E7D32", "width": 4}, "value": 1.5}
+        },
+        title={"text": f"{titulo}", "font": {"size": 14}}
+    ))
+    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=220)
+    return fig
 
+g1, g2, g3 = st.columns(3)
+with g1:
+    st.plotly_chart(gauge_iipa(iipa_nom, "IIPA — Nombramiento"), use_container_width=True)
+with g2:
+    st.plotly_chart(gauge_iipa(iipa_oca, "IIPA — Ocasional"), use_container_width=True)
+with g3:
+    st.plotly_chart(gauge_iipa(iipa_tot, "IIPA — Total"), use_container_width=True)
 
 # ------------------ Tabla final filtrable ------------------
 st.subheader("Tabla de publicaciones consideradas (primer autor)")
