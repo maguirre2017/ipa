@@ -619,6 +619,49 @@ else:
         )
 
         st.altair_chart(chart_trend_fac_oca, use_container_width=True)
+# ------------------ Densidad de publicaciones por año y carrera (Ocasional) ------------------
+st.subheader("Densidad de publicaciones por año y carrera (Docentes Ocasionales)")
+
+# Base coherente con los filtros globales del dashboard
+dens_oca = slice_df(df, year_vis_sel, fac_sel, car_sel, tipo_sel, sede_sel)
+
+# Solo docentes ocasionales
+dens_oca = dens_oca[dens_oca["VINCULACION_PUB"].eq("OCASIONAL")]
+
+if dens_oca.empty:
+    st.info("No existen publicaciones de docentes Ocasionales con los filtros actuales.")
+else:
+    dens_car_oca = (
+        dens_oca
+        .dropna(subset=["AÑO", "CARRERA"])
+        .groupby(["AÑO", "CARRERA"])
+        .size()
+        .reset_index(name="Publicaciones")
+    )
+
+    if dens_car_oca.empty:
+        st.info("No hay registros de carrera para mostrar la densidad por año (Ocasional).")
+    else:
+        chart_dens_oca = (
+            alt.Chart(dens_car_oca)
+              .mark_rect()
+              .encode(
+                  x=alt.X("AÑO:O", title="Año"),
+                  y=alt.Y("CARRERA:N", title="Carrera"),
+                  color=alt.Color(
+                      "Publicaciones:Q",
+                      title="N.º de publicaciones",
+                      scale=alt.Scale(scheme="greens")
+                  ),
+                  tooltip=["AÑO", "CARRERA", "Publicaciones"]
+              )
+              .properties(
+                  title="Densidad de publicaciones por año y carrera (Docentes Ocasionales)",
+                  height=380
+              )
+        )
+
+        st.altair_chart(chart_dens_oca, use_container_width=True)
 
 st.divider()
 st.subheader("Exploración de publicaciones ")
@@ -657,9 +700,7 @@ chart_fac_prop = (
           tooltip=["FACULTAD", "VINCULACION_PUB", "Publicaciones"]
       )
       .properties(
-          title="Distribución proporcional de publicaciones por Facultad",
-          height=350
-      )
+          title="Distribución proporcional de publicaciones por Facultad")
 )
 
 st.altair_chart(chart_fac_prop, use_container_width=True)
@@ -1058,47 +1099,61 @@ with g3:
 # ------------------ Tabla final filtrable ------------------
 st.subheader("Tabla de publicaciones consideradas (primer autor)")
 
-# Filtros de la tabla (amplíe vinculación para no excluir casos)
-year_tab = st.multiselect("Año (tabla)", years_all, default=year_vis_sel or years_all, key="tab_years")
+# Filtros locales de la tabla
+year_tab = st.multiselect(
+    "Año (tabla)",
+    years_all,
+    default=year_vis_sel or years_all,
+    key="tab_years"
+)
 
-vinciones_disponibles = ["NOMBRAMIENTO","OCASIONAL"]
+vinciones_disponibles = ["NOMBRAMIENTO", "OCASIONAL", "SIN VINCULACION"]
 vinc_tab = st.multiselect(
     "Tipo de vinculación (tabla)",
     vinciones_disponibles,
     default=vinciones_disponibles
 )
 
-# Use SIEMPRE el df ya deduplicado (no 'vis') para no heredar el filtro por TIPO
-tab = df.copy()
+# 1) Aplicar filtros GLOBALes (sidebar) sobre df deduplicado
+tab_base = slice_df(df, year_vis_sel, fac_sel, car_sel, tipo_sel, sede_sel)
+
+# 2) Sobre esa base aplicar filtros LOCALES de la tabla
+tab = tab_base.copy()
 if year_tab:
     tab = tab[tab["AÑO"].isin(year_tab)]
 if vinc_tab:
     tab = tab[tab["VINCULACION_PUB"].isin(vinc_tab)]
 
-# Etiqueta amigable de tipo (igual que en las visualizaciones)
+# 3) Clasificación legible del tipo de publicación (si no tiene ya una función global para esto)
+import re, unicodedata
+
 def _tipo_publicacion_row(row):
-    import re, unicodedata
     def _norm(s: str) -> str:
         s = str(s or "").strip().upper()
         s = unicodedata.normalize("NFD", s)
         s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
-        return re.sub(r"\s+", " ", s)
+        s = re.sub(r"\s+", " ", s)
+        return s
 
-    clase = _norm(row.get("CLASE_NORM",""))
-    cu    = _norm(row.get("CUARTIL",""))
-    idx   = _norm(row.get("INDEXACIÓN","") or row.get("INDEXACION",""))
+    clase = _norm(row.get("CLASE_NORM", ""))
+    cu    = _norm(row.get("CUARTIL", ""))
+    idx   = _norm(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
 
-    # Capítulos y Libros
-    if "CAPITULO" in clase or "BOOK CHAPTER" in clase or "CHAPTER IN BOOK" in clase: return "Capítulos de libro"
-    if "LIBRO" in clase or "BOOK" in clase: return "Libros"
+    # Capítulos y libros
+    if "CAPITULO" in clase or "BOOK CHAPTER" in clase or "CHAPTER IN BOOK" in clase:
+        return "Capítulos de libro"
+    if "LIBRO" in clase or "BOOK" in clase:
+        return "Libros"
 
     # Proceedings ACI (Scopus/WoS o cuartil)
-    if "PROCEEDINGS" in clase and (any(k in idx for k in ["SCOPUS","WOS","WEB OF SCIENCE"]) or cu in {"Q1","Q2","Q3","Q4"}):
+    if "PROCEEDINGS" in clase and (
+        any(k in idx for k in ["SCOPUS", "WOS", "WEB OF SCIENCE"]) or cu in {"Q1", "Q2", "Q3", "Q4"}
+    ):
         return "Proceedings en Scopus/WoS (ACI)"
 
     # Artículos
     if "ARTICULO" in clase or "ARTICLE" in clase:
-        if cu in {"Q1","Q2","Q3","Q4"} or any(k in idx for k in ["SCOPUS","WOS","WEB OF SCIENCE"]):
+        if cu in {"Q1", "Q2", "Q3", "Q4"} or any(k in idx for k in ["SCOPUS", "WOS", "WEB OF SCIENCE"]):
             return "Artículos en bases de impacto"
         if "LATINDEX" in idx and "CATALOGO" in idx:
             return "Artículos Latindex Catálogo"
@@ -1107,30 +1162,25 @@ def _tipo_publicacion_row(row):
 
     return "Otros"
 
-tab["TIPO DE PUBLICACIÓN"] = tab.apply(_tipo_publicacion_row, axis=1)
+if not tab.empty:
+    tab["TIPO_PUBLICACION"] = tab.apply(_tipo_publicacion_row, axis=1)
+else:
+    tab["TIPO_PUBLICACION"] = []
 
-# Marcas rápidas: Proceedings ACI y Capítulos (para auditoría visual)
-tab["ES_PROCEEDINGS_ACI"] = (
-    (tab["CLASE_NORM"].astype(str).str.upper().eq("PROCEEDINGS")) &
-    (
-        tab["INDEXACIÓN"].astype(str).str.contains("SCOPUS|WOS|WEB OF SCIENCE", case=False, na=False) |
-        tab["CUARTIL"].astype(str).str.fullmatch("Q[1-4]", case=False, na=False)
-    )
-)
-tab["ES_CAPITULO"] = tab["CLASE_NORM"].astype(str).str.upper().eq("CAPITULO")
-
-# Columnas a mostrar
+# 4) Columnas a mostrar
 cols_show = [
-    "AÑO","SEDE","FACULTAD","CARRERA","PRIMER_AUTOR","VINCULACION_PUB",
-    "PUBLICACIÓN","REVISTA","CUARTIL","INDEXACIÓN","CLASE_NORM","TIPO DE PUBLICACIÓN",
-    "DOI","URL"
+    "AÑO", "SEDE", "FACULTAD", "CARRERA",
+    "PRIMER_AUTOR", "VINCULACION_PUB",
+    "PUBLICACIÓN", "REVISTA", "CUARTIL", "INDEXACIÓN",
+    "CLASE_NORM", "TIPO_PUBLICACION",
+    "DOI", "URL"
 ]
-cols_show = [c for c in cols_show if c in tab.columns]  # por seguridad
+cols_show = [c for c in cols_show if c in tab.columns]
 
-# Renombres finales
 tab = tab[cols_show].rename(columns={
     "PRIMER_AUTOR": "DOCENTE (primer autor)",
-    "VINCULACION_PUB": "VINCULACION"
+    "VINCULACION_PUB": "VINCULACION",
+    "TIPO_PUBLICACION": "TIPO DE PUBLICACIÓN"
 })
 
 st.dataframe(tab, use_container_width=True)
