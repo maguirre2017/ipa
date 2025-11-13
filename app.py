@@ -651,18 +651,8 @@ chart_fac_prop = (
                           scale=alt.Scale(range=["#2E7D32", "#81C784", "#B0BEC5"])),
           tooltip=["FACULTAD","VINCULACION_PUB","Publicaciones"]
       )
-      .properties(
-          title={
-              "text": "Distribución proporcional de publicaciones por Facultad",
-              "anchor": "start",
-              "fontSize": 16,
-              "padding": {"top": 25, "bottom": 10}   # <-- evita el corte del título
-          },
-          height=350
-      )
-      .configure_title(
+      .properties(title="Distribución proporcional de publicaciones por Facultad")
           dy=12  # <-- baja el título, garantizando que se vea completo
-      )
 )
 st.altair_chart(chart_fac_prop, use_container_width=True)
 
