@@ -628,7 +628,7 @@ else:
                   color=alt.Color(
                       "FACULTAD:N",
                       title="Facultad",
-                      scale=alt.Scale(range=strong_green_palette)
+                      scale=alt.Scale(range=strong_palette)
                   ),
                   tooltip=["AÑO", "FACULTAD", "Publicaciones"]
               )
@@ -716,7 +716,7 @@ else:
                 color=alt.Color(
                     "VINCULACION_PUB:N",
                     title="Tipo de vinculación",
-                    scale=alt.Scale(range=strong_palette_two)
+                    scale=alt.Scale(range=strong_palette)
                 ),
                 tooltip=["AÑO", "VINCULACION_PUB", "Publicaciones"]
             )
