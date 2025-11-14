@@ -33,6 +33,7 @@ st.caption(
 def _cols_upper(df_):
     df_.columns = [str(c).strip().upper() for c in df_.columns]
     return df_
+df_raw = df.copy()  # copia completa ANTES de la deduplicación global
 
 def _norm_txt(x):
     x = "" if pd.isna(x) else str(x)
@@ -1152,84 +1153,140 @@ year_tab = st.multiselect(
     key="tab_years"
 )
 
-vinciones_disponibles = ["NOMBRAMIENTO", "OCASIONAL", "SIN VINCULACION"]
+vinciones_disponibles = ["NOMBRAMIENTO", "OCASIONAL"]
 vinc_tab = st.multiselect(
     "Tipo de vinculación (tabla)",
     vinciones_disponibles,
     default=vinciones_disponibles
 )
 
-# 1) Aplicar filtros GLOBALes (sidebar) sobre df deduplicado
-tab_base = slice_df(df, year_vis_sel, fac_sel, car_sel, tipo_sel, sede_sel)
+# 1) Partir SIEMPRE del df_raw (todas las filas, con todos los coautores)
+tab_raw = slice_df(df_raw, year_vis_sel, fac_sel, car_sel, tipo_sel, sede_sel)
 
-# 2) Sobre esa base aplicar filtros LOCALES de la tabla
-tab = tab_base.copy()
+# 2) Aplicar filtros locales de la tabla (año / vinculación)
 if year_tab:
-    tab = tab[tab["AÑO"].isin(year_tab)]
+    tab_raw = tab_raw[tab_raw["AÑO"].isin(year_tab)]
 if vinc_tab:
-    tab = tab[tab["VINCULACION_PUB"].isin(vinc_tab)]
+    tab_raw = tab_raw[tab_raw["VINCULACION_PUB"].isin(vinc_tab)]
 
-# 3) Clasificación legible del tipo de publicación (si no tiene ya una función global para esto)
-import re, unicodedata
-
-def _tipo_publicacion_row(row):
-    def _norm(s: str) -> str:
-        s = str(s or "").strip().upper()
-        s = unicodedata.normalize("NFD", s)
-        s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
-        s = re.sub(r"\s+", " ", s)
-        return s
-
-    clase = _norm(row.get("CLASE_NORM", ""))
-    cu    = _norm(row.get("CUARTIL", ""))
-    idx   = _norm(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
-
-    # Capítulos y libros
-    if "CAPITULO" in clase or "BOOK CHAPTER" in clase or "CHAPTER IN BOOK" in clase:
-        return "Capítulos de libro"
-    if "LIBRO" in clase or "BOOK" in clase:
-        return "Libros"
-
-    # Proceedings ACI (Scopus/WoS o cuartil)
-    if "PROCEEDINGS" in clase and (
-        any(k in idx for k in ["SCOPUS", "WOS", "WEB OF SCIENCE"]) or cu in {"Q1", "Q2", "Q3", "Q4"}
-    ):
-        return "Proceedings en Scopus/WoS (ACI)"
-
-    # Artículos
-    if "ARTICULO" in clase or "ARTICLE" in clase:
-        if cu in {"Q1", "Q2", "Q3", "Q4"} or any(k in idx for k in ["SCOPUS", "WOS", "WEB OF SCIENCE"]):
-            return "Artículos en bases de impacto"
-        if "LATINDEX" in idx and "CATALOGO" in idx:
-            return "Artículos Latindex Catálogo"
-        if idx not in {"", "NO REGISTRADO", "NAN"}:
-            return "Artículos Bases Regionales"
-
-    return "Otros"
-
-if not tab.empty:
-    tab["TIPO_PUBLICACION"] = tab.apply(_tipo_publicacion_row, axis=1)
+if tab_raw.empty:
+    st.info("No hay publicaciones para los filtros seleccionados.")
 else:
-    tab["TIPO_PUBLICACION"] = []
+    # 3) Reconstruir claves de publicación y primer autor EN ESTE SUBCONJUNTO
 
-# 4) Columnas a mostrar
-cols_show = [
-    "AÑO", "SEDE", "FACULTAD", "CARRERA",
-    "PRIMER_AUTOR", "VINCULACION_PUB",
-    "PUBLICACIÓN", "REVISTA", "CUARTIL", "INDEXACIÓN",
-    "CLASE_NORM", "TIPO_PUBLICACION",
-    "DOI", "URL"
-]
-cols_show = [c for c in cols_show if c in tab.columns]
+    # Clave de publicación (igual que en el pipeline original)
+    tab_raw["_DOI"] = tab_raw["DOI"].fillna("").astype(str).str.strip().str.lower()
+    tab_raw["_TIT"] = tab_raw["PUBLICACIÓN"].fillna("").astype(str).str.strip().str.lower()
+    tab_raw["_KEY"] = np.where(tab_raw["_DOI"] != "", "doi:" + tab_raw["_DOI"], "tit:" + tab_raw["_TIT"])
 
-tab = tab[cols_show].rename(columns={
-    "PRIMER_AUTOR": "DOCENTE (primer autor)",
-    "VINCULACION_PUB": "VINCULACION",
-    "TIPO_PUBLICACION": "TIPO DE PUBLICACIÓN"
-})
+    # Orden local para desempates
+    tab_raw["_ORD"] = np.arange(len(tab_raw))
 
-st.dataframe(tab, use_container_width=True)
+    # Columna de primer autor por fila (usando los mismos helpers globales)
+    autor_cols = ["NOMBRES", "DOCENTES", "DOCENTE", "AUTORES", "AUTOR", "INVESTIGADORES", "INVESTIGADOR"]
+    col_autores = next((c for c in autor_cols if c in tab_raw.columns), None)
 
+    if col_autores:
+        tab_raw["PRIMER_AUTOR"] = tab_raw[col_autores].map(split_first_author)
+    else:
+        tab_raw["PRIMER_AUTOR"] = ""
+
+    tab_raw["PRIMER_AUTOR_NORM"] = tab_raw["PRIMER_AUTOR"].map(_norm_txt_upper)
+
+    # Fuente de lista de autores para cada fila (igual que antes)
+    list_cols = [c for c in ["AUTORES","DOCENTES","DOCENTE","AUTOR"] if c in tab_raw.columns]
+    list_cols = (["NOMBRES"] + list_cols) if "NOMBRES" in tab_raw.columns else list_cols
+
+    def first_nonempty_row_authors(row):
+        for c in list_cols:
+            val = row.get(c, "")
+            if isinstance(val, str) and val.strip():
+                return val
+        return ""
+
+    tab_raw["_AUTORES_SRC"] = tab_raw.apply(first_nonempty_row_authors, axis=1)
+
+    # 4) Deduplicación DENTRO del subconjunto filtrado:
+    #    primer autor canónico por publicación, pero restringido a la carrera/sede filtradas
+    keep_idx = []
+    for key, g in tab_raw.groupby("_KEY", sort=False):
+        if key in ("", "tit:"):
+            # publicaciones sin DOI/Título útil: se mantienen todas las filas del subconjunto
+            keep_idx.extend(g.index.tolist())
+            continue
+
+        src_list = pick_authors_list(g["_AUTORES_SRC"])
+        canon = split_first_author(src_list)
+        canon_norm = _norm_txt_upper(canon)
+
+        if canon_norm:
+            match = g[g["PRIMER_AUTOR_NORM"] == canon_norm]
+            if not match.empty:
+                keep_idx.append(match.sort_values("_ORD").index[0])
+                continue
+
+        # fallback: primer registro del subconjunto para esa publicación
+        keep_idx.append(g.sort_values("_ORD").index[0])
+
+    tab = tab_raw.loc[keep_idx].copy()
+
+    # 5) Clasificación legible del tipo de publicación
+    import re, unicodedata
+
+    def _tipo_publicacion_row(row):
+        def _norm(s: str) -> str:
+            s = str(s or "").strip().upper()
+            s = unicodedata.normalize("NFD", s)
+            s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+            s = re.sub(r"\s+", " ", s)
+            return s
+
+        clase = _norm(row.get("CLASE_NORM", ""))
+        cu    = _norm(row.get("CUARTIL", ""))
+        idx   = _norm(row.get("INDEXIÓN", "") or row.get("INDEXACION", "") or row.get("INDEXACIÓN",""))
+
+        # Capítulos y libros
+        if "CAPITULO" in clase or "BOOK CHAPTER" in clase or "CHAPTER IN BOOK" in clase:
+            return "Capítulos de libro"
+        if "LIBRO" in clase or "BOOK" in clase:
+            return "Libros"
+
+        # Proceedings ACI (Scopus/WoS o cuartil)
+        if "PROCEEDINGS" in clase and (
+            any(k in idx for k in ["SCOPUS","WOS","WEB OF SCIENCE"]) or cu in {"Q1","Q2","Q3","Q4"}
+        ):
+            return "Proceedings en Scopus/WoS (ACI)"
+
+        # Artículos
+        if "ARTICULO" in clase or "ARTICLE" in clase:
+            if cu in {"Q1","Q2","Q3","Q4"} or any(k in idx for k in ["SCOPUS","WOS","WEB OF SCIENCE"]):
+                return "Artículos en bases de impacto"
+            if "LATINDEX" in idx and "CATALOGO" in idx:
+                return "Artículos Latindex Catálogo"
+            if idx not in {"", "NO REGISTRADO", "NAN"}:
+                return "Artículos Bases Regionales"
+
+        return "Otros"
+
+    tab["TIPO_PUBLICACION"] = tab.apply(_tipo_publicacion_row, axis=1)
+
+    # 6) Columnas a mostrar
+    cols_show = [
+        "AÑO", "SEDE", "FACULTAD", "CARRERA",
+        "PRIMER_AUTOR", "VINCULACION_PUB",
+        "PUBLICACIÓN", "REVISTA", "CUARTIL", "INDEXACIÓN",
+        "CLASE_NORM", "TIPO_PUBLICACION",
+        "DOI", "URL"
+    ]
+    cols_show = [c for c in cols_show if c in tab.columns]
+
+    tab = tab[cols_show].rename(columns={
+        "PRIMER_AUTOR": "DOCENTE (primer autor)",
+        "VINCULACION_PUB": "VINCULACION",
+        "TIPO_PUBLICACION": "TIPO DE PUBLICACIÓN"
+    })
+
+    st.dataframe(tab, use_container_width=True)
 # ------------------ Detalle de PPC (φ base y λ final) ------------------
 st.subheader("Detalle de PPC (φ base y λ final) — periodo de cálculo (TOTAL)")
 calc_all_for_detail = slice_df(df, year_calc_sel, fac_sel, car_sel, tipo_sel, sede_sel)
