@@ -259,13 +259,22 @@ def map_vinc(s: str) -> str:
     if s in ("NOMBRAMIENTO","OCASIONAL"):
         return s
     # mapeos frecuentes
-    if s in ("OC","OCAS","OCACIONAL"): return "OCASIONAL"
-    if s in ("NOM","NOMBRADO","NOMBRAM"): return "NOMBRAMIENTO"
+    if s in ("OC","OCAS","OCACIONAL"):
+        return "OCASIONAL"
+    if s in ("NOM","NOMBRADO","NOMBRAM"):
+        return "NOMBRAMIENTO"
     return "SIN VINCULACION"
 
 src_vinc_cols = ["TIPO DE VINCULACIÓN","TIPO_VINCULACION","TIPO VINCULACION","VINCULACION","TIPO"]
 vcol = next((c for c in src_vinc_cols if c in df.columns), None)
+
 df["VINCULACION_PUB"] = df[vcol].map(map_vinc) if vcol else "SIN VINCULACION"
+
+# Asegurar la misma columna también en df_raw (base sin deduplicar)
+if "df_raw" in globals():
+    vcol_raw = next((c for c in src_vinc_cols if c in df_raw.columns), None)
+    df_raw["VINCULACION_PUB"] = df_raw[vcol_raw].map(map_vinc) if vcol_raw else "SIN VINCULACION"
+
 
 # ------------------ Parámetros y filtros ------------------
 years_all = sorted([int(y) for y in df["AÑO"].dropna().unique()])
@@ -1244,7 +1253,8 @@ else:
 
         clase = _norm(row.get("CLASE_NORM", ""))
         cu    = _norm(row.get("CUARTIL", ""))
-        idx   = _norm(row.get("INDEXIÓN", "") or row.get("INDEXACION", "") or row.get("INDEXACIÓN",""))
+        idx = _norm(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
+
 
         # Capítulos y libros
         if "CAPITULO" in clase or "BOOK CHAPTER" in clase or "CHAPTER IN BOOK" in clase:
