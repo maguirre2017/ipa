@@ -306,7 +306,7 @@ with st.sidebar:
     # LCL (capítulos)
     st.subheader("Capítulos — factor fijo (si no hay TOTAL_CAPITULOS)")
     factor_cap = st.number_input("Factor fijo por capítulo", min_value=0.1, max_value=1.0, value=0.25, step=0.05)
-    usar_total_caps = st.checkbox("Usar TOTAL_CAPITULOS si existe (peso = 1 / TOTAL_CAPITULOS)", value=False)
+    usar_total_caps = st.checkbox("Usar TOTAL_CAPITULOS si existe", value=False)
 
     # Interculturalidad (21% máximo)
     intercultural_21 = st.checkbox("Aplicar componente intercultural (hasta 21% de artículos/proceedings)", value=True)
@@ -1328,7 +1328,7 @@ st.caption(
 st.caption(
     "Notas: Consideraciones tomadas en cuenta "
     "(1) Proceedings cuentan en PPC solo si están indexados (Scopus/WoS). "
-    "(2) LCL: libros ponderan 1; capítulos ponderan 1/TOTAL_CAPITULOS si se activa; de lo contrario, factor fijo. "
+    "(2) LCL: libros ponderan 1; capítulos ponderan # DE CAPÍTULOS/TOTAL_CAPITULOS si se activa; de lo contrario, factor fijo. "
     "(3) Interculturalidad: opción de +0.21 aplicada hasta el 21% del total de artículos PPC. "
     "(4) Se ha utilizado deduplicación para evitar doble conteo por coautorías."
 )
