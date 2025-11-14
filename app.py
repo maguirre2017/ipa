@@ -33,7 +33,6 @@ st.caption(
 def _cols_upper(df_):
     df_.columns = [str(c).strip().upper() for c in df_.columns]
     return df_
-df_raw = df.copy()  # copia completa ANTES de la deduplicación global
 
 def _norm_txt(x):
     x = "" if pd.isna(x) else str(x)
@@ -80,6 +79,8 @@ def _find_sheet(xf, candidates, default_idx=None):
 sheet_pub = _find_sheet(xfile, CAND_PUBLIC, default_idx=0)
 df = pd.read_excel(xfile, sheet_name=sheet_pub) if sheet_pub else pd.read_excel(xfile, sheet_name=0)
 df = _cols_upper(df)
+df_raw = df.copy()  # copia completa ANTES de cualquier deduplicación
+
 
 # ------------------ Asegurar columnas mínimas ------------------
 for col in [
