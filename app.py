@@ -513,6 +513,15 @@ else:
         "#00CC66",  # verde brillante
         "#00E68A"   # verde neon moderado (sigue institucional)
     ]
+strong_palette = [
+    "#1B5E20",  # verde oscuro
+    "#0D47A1",  # azul fuerte
+    "#B71C1C",  # rojo profundo
+    "#4A148C",  # morado
+    "#E65100",  # naranja intenso
+    "#00695C",  # verde azulado
+    "#880E4F",  # vino
+]
 
     # ---------- Tendencia por FACULTAD ----------
     trend_fac = (
@@ -532,7 +541,7 @@ else:
               color=alt.Color(
                   "FACULTAD:N",
                   title="Facultad",
-                  scale=alt.Scale(range=strong_green_palette)
+                  scale=alt.Scale(range=strong_palette)
               ),
               tooltip=["AÑO","FACULTAD","Publicaciones"]
           )
