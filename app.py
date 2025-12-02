@@ -888,6 +888,8 @@ st.subheader("Tendencia mensual de publicaciones en Scopus y Web of Science")
 
 # Base coherente con los filtros globales del dashboard
 scw_base = slice_df(df, year_vis_sel, fac_sel, car_sel, tipo_sel, sede_sel)
+
+# Asegurar que exista MES
 scw_base = scw_base.dropna(subset=["MES"])
 
 if scw_base.empty:
@@ -895,28 +897,27 @@ if scw_base.empty:
 else:
     import unicodedata, re
 
-    def _norm_local(s: str) -> str:
+    def _norm_local_scw(s: str) -> str:
         s = str(s or "").strip().upper()
         s = unicodedata.normalize("NFD", s)
         s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
         s = re.sub(r"\s+", " ", s)
         return s
+
     def clasifica_scopus_wos(row):
-        idx = _norm_local(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
-    
+        idx = _norm_local_scw(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
+
         tiene_scopus = "SCOPUS" in idx
         tiene_wos    = ("WOS" in idx) or ("WEB OF SCIENCE" in idx)
-    
-        # Si aparece en ambas → se asigna SOLO a Scopus (evita 3ra categoría)
+
+        # Si aparece en ambas, se asigna solo a Scopus para evitar doble categoría
         if tiene_scopus:
             return "Scopus"
-    
         if tiene_wos:
             return "Web of Science"
+        return None
 
-    return None
-
-
+    # Clasificar publicaciones por base de indexación
     scw_base["BASE_INDEXADA"] = scw_base.apply(clasifica_scopus_wos, axis=1)
     scw_base = scw_base.dropna(subset=["BASE_INDEXADA"])
 
@@ -931,7 +932,7 @@ else:
             .reset_index(name="Publicaciones")
         )
 
-        # Totales mensuales
+        # Totales mensuales (Scopus + WoS)
         tot_scw = (
             scw
             .groupby("MES")["Publicaciones"]
@@ -939,11 +940,12 @@ else:
             .reset_index(name="Total")
         )
 
+        # Unir totales
         scw = scw.merge(tot_scw, on="MES", how="left").sort_values("MES")
 
-        # Paleta: Scopus = verde, Web of Science = azul, ambas = tono intermedio
-        domain_bases = ["Scopus", "Web of Science", "Scopus y Web of Science"]
-        range_bases  = ["#1B5E20", "#1565C0", "#43A047"]
+        # Paleta: Scopus = verde, Web of Science = azul
+        domain_bases = ["Scopus", "Web of Science"]
+        range_bases  = ["#1B5E20", "#1565C0"]
 
         base_scw = alt.Chart(scw)
 
@@ -969,7 +971,7 @@ else:
             )
         )
 
-        # Líneas por base (Scopus / WoS / ambas)
+        # Líneas por base (Scopus / Web of Science)
         lines_scw = (
             base_scw
             .mark_line(
@@ -997,7 +999,6 @@ else:
         )
 
         st.altair_chart(chart_scw, use_container_width=True)
-
 
 # ------------------ Tendencia mensual: publicaciones de impacto vs regionales ------------------
 st.subheader("Tendencia mensual de publicaciones de impacto y regionales")
