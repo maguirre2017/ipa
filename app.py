@@ -1046,33 +1046,89 @@ else:
         color_impacto = "#1B5E20"   # verde oscuro (impacto)
         color_regional = "#2E7D32"  # verde medio (regional)
 
-        # ---------- Tendencia mensual de publicaciones de impacto ----------
-        trend_imp = (
-            trend_base[trend_base["TIPO_IMPACTO"] == "Impacto"]
-            .groupby("MES")
-            .size()
-            .reset_index(name="Publicaciones")
-            .sort_values("MES")
-        )
+# ------------------ Tendencia mensual de publicaciones de impacto ------------------
+st.subheader("Tendencia mensual de publicaciones de impacto")
 
-        if trend_imp.empty:
-            st.info("No hay publicaciones de impacto con los filtros actuales.")
-        else:
-            chart_trend_imp = (
-                alt.Chart(trend_imp)
-                  .mark_line(point=alt.OverlayMarkDef(size=70, filled=True), strokeWidth=3)
-                  .encode(
-                      x=alt.X("MES:O", title="Mes", sort=None),
-                      y=alt.Y("Publicaciones:Q", title="N.º de publicaciones"),
-                      tooltip=["MES", "Publicaciones"]
-                  )
-                  .properties(
-                      title="Tendencia mensual de publicaciones de impacto",
-                      height=320
-                  )
-                  .encode(color=alt.value(color_impacto))
-            )
-            st.altair_chart(chart_trend_imp, use_container_width=True)
+# Base coherente con los filtros globales
+trend_base = slice_df(df, year_vis_sel, fac_sel, car_sel, tipo_sel, sede_sel)
+trend_base = trend_base.dropna(subset=["MES"])
+
+if trend_base.empty:
+    st.info("No existen publicaciones con fecha válida para los filtros actuales.")
+else:
+    import unicodedata, re
+
+    def _norm_local(s: str) -> str:
+        s = str(s or "").strip().upper()
+        s = unicodedata.normalize("NFD", s)
+        s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+        s = re.sub(r"\s+", " ", s)
+        return s
+
+    def clasifica_impacto_regional(row):
+        clase = _norm_local(row.get("CLASE_NORM", ""))
+        cu    = _norm_local(row.get("CUARTIL", ""))
+        idx   = _norm_local(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
+
+        es_proceedings = "PROCEEDINGS" in clase
+        es_articulo    = ("ARTICULO" in clase) or ("ARTICLE" in clase)
+
+        tiene_scopus = "SCOPUS" in idx
+        tiene_wos    = ("WOS" in idx) or ("WEB OF SCIENCE" in idx)
+
+        # 1) PROCEEDINGS en Scopus/WoS → Impacto
+        if es_proceedings and (tiene_scopus or tiene_wos):
+            return "Impacto"
+
+        # 2) Artículos o proceedings con cuartil o Scopus/WoS → Impacto
+        if (es_articulo or es_proceedings) and (
+            cu in {"Q1", "Q2", "Q3", "Q4"} or tiene_scopus or tiene_wos
+        ):
+            return "Impacto"
+
+        # 3) Publicaciones regionales (Latindex u otra base registrada)
+        if es_articulo or es_proceedings:
+            if "LATINDEX" in idx:
+                return "Regional"
+            if idx not in {"", "NO REGISTRADO", "NAN"}:
+                return "Regional"
+
+        # 4) Sin clasificación → no entra a este gráfico
+        return None
+
+    # Clasificar impacto/regional con el criterio anterior
+    trend_base["TIPO_IMPACTO"] = trend_base.apply(clasifica_impacto_regional, axis=1)
+
+    # Solo impacto
+    trend_imp = (
+        trend_base[trend_base["TIPO_IMPACTO"] == "Impacto"]
+        .groupby("MES")
+        .size()
+        .reset_index(name="Publicaciones")
+        .sort_values("MES")
+    )
+
+    if trend_imp.empty:
+        st.info("No hay publicaciones de impacto con los filtros actuales.")
+    else:
+        color_impacto = "#1B5E20"  # verde institucional
+
+        chart_trend_imp = (
+            alt.Chart(trend_imp)
+              .mark_line(point=alt.OverlayMarkDef(size=70, filled=True), strokeWidth=3)
+              .encode(
+                  x=alt.X("MES:O", title="Mes", sort=None),
+                  y=alt.Y("Publicaciones:Q", title="N.º de publicaciones"),
+                  tooltip=["MES", "Publicaciones"]
+              )
+              .properties(
+                  title="Tendencia mensual de publicaciones de impacto",
+                  height=320
+              )
+              .encode(color=alt.value(color_impacto))
+        )
+        st.altair_chart(chart_trend_imp, use_container_width=True)
+
 
         # ---------- Tendencia mensual de publicaciones regionales ----------
         trend_reg = (
