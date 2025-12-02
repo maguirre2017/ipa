@@ -747,17 +747,14 @@ else:
 
 st.divider()
 st.subheader("Exploración de publicaciones ")
-# ------------------ Tendencia mensual: publicaciones de impacto vs regionales (con totales visibles) ------------------
+# ------------------ Tendencia mensual: publicaciones de impacto vs regionales (verde vs azul) ------------------
 st.subheader("Tendencia mensual de publicaciones de impacto y regionales")
 
-# Base coherente con los filtros globales del dashboard
 trend_base = slice_df(df, year_vis_sel, fac_sel, car_sel, tipo_sel, sede_sel)
-
-# Asegurar que exista la columna MES y que tenga datos válidos
 trend_base = trend_base.dropna(subset=["MES"])
 
 if trend_base.empty:
-    st.info("No existen publicaciones con fecha de publicación válida para los filtros actuales.")
+    st.info("No existen publicaciones con fecha válida para los filtros actuales.")
 else:
     import unicodedata, re
 
@@ -773,12 +770,9 @@ else:
         cu    = _norm(row.get("CUARTIL", ""))
         idx   = _norm(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
 
-        # Solo artículos y proceedings nos interesan aquí
         if "ARTICULO" in clase or "ARTICLE" in clase or "PROCEEDINGS" in clase:
-            # Publicaciones de impacto (Q1–Q4 o Scopus/WoS/Web of Science)
-            if cu in {"Q1", "Q2", "Q3", "Q4"} or any(k in idx for k in ["SCOPUS", "WOS", "WEB OF SCIENCE"]):
+            if cu in {"Q1","Q2","Q3","Q4"} or any(k in idx for k in ["SCOPUS","WOS","WEB OF SCIENCE"]):
                 return "Impacto"
-            # Publicaciones regionales (Latindex u otras bases no vacías)
             if "LATINDEX" in idx or idx not in {"", "NO REGISTRADO", "NAN"}:
                 return "Regional"
         return None
@@ -787,9 +781,8 @@ else:
     trend_base = trend_base.dropna(subset=["TIPO_IMPACTO"])
 
     if trend_base.empty:
-        st.info("No hay publicaciones clasificadas como de impacto o regionales con los filtros actuales.")
+        st.info("No hay publicaciones clasificadas como de impacto o regionales.")
     else:
-        # Agregación mensual por tipo (impacto / regional)
         imp_reg = (
             trend_base
             .groupby(["MES", "TIPO_IMPACTO"])
@@ -797,7 +790,6 @@ else:
             .reset_index(name="Publicaciones")
         )
 
-        # Totales mensuales (impacto + regional)
         totales = (
             imp_reg
             .groupby("MES")["Publicaciones"]
@@ -805,28 +797,26 @@ else:
             .reset_index(name="Total")
         )
 
-        # Unir totales al dataframe de impacto/regional
-        imp_reg = imp_reg.merge(totales, on="MES", how="left")
-        imp_reg = imp_reg.sort_values("MES")
+        imp_reg = imp_reg.merge(totales, on="MES", how="left").sort_values("MES")
 
-        # Paleta diferenciada pero coherente con verdes institucionales
+        # Paleta: Impacto = verde — Regional = azul
         domain_tipo = ["Impacto", "Regional"]
-        range_tipo  = ["#1B5E20", "#2E7D32"]  # verde oscuro / verde medio
+        range_tipo  = ["#1B5E20", "#1565C0"]
 
         base = alt.Chart(imp_reg)
 
-        # Barras de total mensual (fondo)
+        # Barras de totales mensuales
         bars_total = (
             base
             .mark_bar(opacity=0.25)
             .encode(
                 x=alt.X("MES:O", title="Mes", sort=None),
                 y=alt.Y("Total:Q", title="N.º de publicaciones"),
-                tooltip=["MES", "Total"]
+                tooltip=["MES","Total"]
             )
         )
 
-        # Etiquetas de total mensual sobre la barra
+        # Etiquetas del total mensual
         text_total = (
             base
             .mark_text(dy=-8, fontSize=11)
@@ -837,10 +827,13 @@ else:
             )
         )
 
-        # Líneas de impacto vs regional
+        # Líneas: impacto (verde) y regional (azul)
         lines_imp_reg = (
             base
-            .mark_line(point=alt.OverlayMarkDef(size=70, filled=True), strokeWidth=3)
+            .mark_line(
+                point=alt.OverlayMarkDef(size=70, filled=True),
+                strokeWidth=3
+            )
             .encode(
                 x=alt.X("MES:O", title="Mes", sort=None),
                 y=alt.Y("Publicaciones:Q", title="N.º de publicaciones"),
@@ -849,14 +842,14 @@ else:
                     title="Tipo de publicación",
                     scale=alt.Scale(domain=domain_tipo, range=range_tipo)
                 ),
-                tooltip=["MES", "TIPO_IMPACTO", "Publicaciones", "Total"]
+                tooltip=["MES","TIPO_IMPACTO","Publicaciones","Total"]
             )
         )
 
         chart_imp_reg = (
             alt.layer(bars_total, text_total, lines_imp_reg)
               .properties(
-                  title="Tendencia mensual de publicaciones de impacto y regionales (incluye total mensual)",
+                  title="Tendencia mensual de publicaciones de impacto (verde) y regionales (azul)",
                   height=380
               )
         )
