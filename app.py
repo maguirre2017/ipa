@@ -771,25 +771,31 @@ def clasifica_impacto_regional(row):
     idx   = _norm(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
 
     es_proceedings = "PROCEEDINGS" in clase
-    tiene_scopus   = "SCOPUS" in idx
-    tiene_wos      = ("WOS" in idx) or ("WEB OF SCIENCE" in idx)
+    es_articulo    = ("ARTICULO" in clase) or ("ARTICLE" in clase)
 
-    # 1) PROCEEDINGS en Scopus/WoS → Impacto
+    tiene_scopus = "SCOPUS" in idx
+    tiene_wos    = ("WOS" in idx) or ("WEB OF SCIENCE" in idx)
+
+    # 1) PROCEEDINGS en Scopus/WoS → Impacto explícitamente
     if es_proceedings and (tiene_scopus or tiene_wos):
         return "Impacto"
 
-    # 2) Artículos o proceedings en general
-    if "ARTICULO" in clase or "ARTICLE" in clase or es_proceedings:
-        # Impacto: cuartil o Scopus/WoS
-        if cu in {"Q1","Q2","Q3","Q4"} or tiene_scopus or tiene_wos:
-            return "Impacto"
+    # 2) Cualquier registro (artículo o proceedings) con cuartil o Scopus/WoS → Impacto
+    if (es_articulo or es_proceedings) and (
+        cu in {"Q1", "Q2", "Q3", "Q4"} or tiene_scopus or tiene_wos
+    ):
+        return "Impacto"
 
-        # Regional: Latindex u otra base registrada
-        if "LATINDEX" in idx or idx not in {"", "NO REGISTRADO", "NAN"}:
+    # 3) Regional: Latindex u otra base registrada distinta de vacío / NO REGISTRADO / NAN
+    if (es_articulo or es_proceedings):
+        if "LATINDEX" in idx:
+            return "Regional"
+        if idx not in {"", "NO REGISTRADO", "NAN"}:
             return "Regional"
 
-    # 3) Todo lo demás queda fuera del gráfico
+    # 4) Todo lo demás no entra al gráfico
     return None
+
 
     trend_base["TIPO_IMPACTO"] = trend_base.apply(clasifica_impacto_regional, axis=1)
     trend_base = trend_base.dropna(subset=["TIPO_IMPACTO"])
@@ -888,20 +894,21 @@ else:
         s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
         s = re.sub(r"\s+", " ", s)
         return s
+def clasifica_scopus_wos(row):
+    idx = _norm_local(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
 
-    def clasifica_scopus_wos(row):
-        idx = _norm_local(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
+    tiene_scopus = "SCOPUS" in idx
+    tiene_wos    = ("WOS" in idx) or ("WEB OF SCIENCE" in idx)
 
-        tiene_scopus = "SCOPUS" in idx
-        tiene_wos = ("WOS" in idx) or ("WEB OF SCIENCE" in idx)
+    # Si aparece en ambas → se asigna SOLO a Scopus (evita 3ra categoría)
+    if tiene_scopus:
+        return "Scopus"
 
-        if tiene_scopus and tiene_wos:
-            return "Scopus y Web of Science"
-        if tiene_scopus:
-            return "Scopus"
-        if tiene_wos:
-            return "Web of Science"
-        return None
+    if tiene_wos:
+        return "Web of Science"
+
+    return None
+
 
     scw_base["BASE_INDEXADA"] = scw_base.apply(clasifica_scopus_wos, axis=1)
     scw_base = scw_base.dropna(subset=["BASE_INDEXADA"])
