@@ -766,16 +766,31 @@ else:
         return s
 
     def clasifica_impacto_regional(row):
-        clase = _norm(row.get("CLASE_NORM", ""))
-        cu    = _norm(row.get("CUARTIL", ""))
-        idx   = _norm(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
+    clase = _norm(row.get("CLASE_NORM", ""))
+    cu    = _norm(row.get("CUARTIL", ""))
+    idx   = _norm(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
 
-        if "ARTICULO" in clase or "ARTICLE" in clase or "PROCEEDINGS" in clase:
-            if cu in {"Q1","Q2","Q3","Q4"} or any(k in idx for k in ["SCOPUS","WOS","WEB OF SCIENCE"]):
-                return "Impacto"
-            if "LATINDEX" in idx or idx not in {"", "NO REGISTRADO", "NAN"}:
-                return "Regional"
-        return None
+    es_proceedings = "PROCEEDINGS" in clase
+    tiene_scopus   = "SCOPUS" in idx
+    tiene_wos      = ("WOS" in idx) or ("WEB OF SCIENCE" in idx)
+
+    # 1) PROCEEDINGS en Scopus/WoS → Impacto
+    if es_proceedings and (tiene_scopus or tiene_wos):
+        return "Impacto"
+
+    # 2) Artículos (y también proceedings que pasen por aquí) de impacto
+    if "ARTICULO" in clase or "ARTICLE" in clase or es_proceedings:
+        # Impacto: cuartil o Scopus/WoS
+        if cu in {"Q1","Q2","Q3","Q4"} or tiene_scopus or tiene_wos:
+            return "Impacto"
+
+        # Regional: Latindex u otra base registrada
+        if "LATINDEX" in idx or idx not in {"", "NO REGISTRADO", "NAN"}:
+            return "Regional"
+
+    # 3) Todo lo demás no entra en este gráfico
+    return None
+
 
     trend_base["TIPO_IMPACTO"] = trend_base.apply(clasifica_impacto_regional, axis=1)
     trend_base = trend_base.dropna(subset=["TIPO_IMPACTO"])
@@ -855,6 +870,121 @@ else:
         )
 
         st.altair_chart(chart_imp_reg, use_container_width=True)
+
+# ------------------ Tendencia mensual: publicaciones en Scopus y Web of Science ------------------
+st.subheader("Tendencia mensual de publicaciones en Scopus y Web of Science")
+
+# Base coherente con los filtros globales del dashboard
+scw_base = slice_df(df, year_vis_sel, fac_sel, car_sel, tipo_sel, sede_sel)
+scw_base = scw_base.dropna(subset=["MES"])
+
+if scw_base.empty:
+    st.info("No existen publicaciones con fecha válida para los filtros actuales.")
+else:
+    import unicodedata, re
+
+    def _norm_local(s: str) -> str:
+        s = str(s or "").strip().upper()
+        s = unicodedata.normalize("NFD", s)
+        s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+        s = re.sub(r"\s+", " ", s)
+        return s
+
+    def clasifica_scopus_wos(row):
+        idx = _norm_local(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
+
+        tiene_scopus = "SCOPUS" in idx
+        tiene_wos = ("WOS" in idx) or ("WEB OF SCIENCE" in idx)
+
+        if tiene_scopus and tiene_wos:
+            return "Scopus y Web of Science"
+        if tiene_scopus:
+            return "Scopus"
+        if tiene_wos:
+            return "Web of Science"
+        return None
+
+    scw_base["BASE_INDEXADA"] = scw_base.apply(clasifica_scopus_wos, axis=1)
+    scw_base = scw_base.dropna(subset=["BASE_INDEXADA"])
+
+    if scw_base.empty:
+        st.info("No hay publicaciones indexadas en Scopus ni Web of Science con los filtros actuales.")
+    else:
+        # Agregación mensual por base
+        scw = (
+            scw_base
+            .groupby(["MES", "BASE_INDEXADA"])
+            .size()
+            .reset_index(name="Publicaciones")
+        )
+
+        # Totales mensuales
+        tot_scw = (
+            scw
+            .groupby("MES")["Publicaciones"]
+            .sum()
+            .reset_index(name="Total")
+        )
+
+        scw = scw.merge(tot_scw, on="MES", how="left").sort_values("MES")
+
+        # Paleta: Scopus = verde, Web of Science = azul, ambas = tono intermedio
+        domain_bases = ["Scopus", "Web of Science", "Scopus y Web of Science"]
+        range_bases  = ["#1B5E20", "#1565C0", "#43A047"]
+
+        base_scw = alt.Chart(scw)
+
+        # Barras de total mensual
+        bars_total_scw = (
+            base_scw
+            .mark_bar(opacity=0.25)
+            .encode(
+                x=alt.X("MES:O", title="Mes", sort=None),
+                y=alt.Y("Total:Q", title="N.º de publicaciones"),
+                tooltip=["MES", "Total"]
+            )
+        )
+
+        # Etiquetas de total mensual
+        text_total_scw = (
+            base_scw
+            .mark_text(dy=-8, fontSize=11)
+            .encode(
+                x=alt.X("MES:O", sort=None),
+                y="Total:Q",
+                text="Total:Q"
+            )
+        )
+
+        # Líneas por base (Scopus / WoS / ambas)
+        lines_scw = (
+            base_scw
+            .mark_line(
+                point=alt.OverlayMarkDef(size=70, filled=True),
+                strokeWidth=3
+            )
+            .encode(
+                x=alt.X("MES:O", title="Mes", sort=None),
+                y=alt.Y("Publicaciones:Q", title="N.º de publicaciones"),
+                color=alt.Color(
+                    "BASE_INDEXADA:N",
+                    title="Base de indexación",
+                    scale=alt.Scale(domain=domain_bases, range=range_bases)
+                ),
+                tooltip=["MES", "BASE_INDEXADA", "Publicaciones", "Total"]
+            )
+        )
+
+        chart_scw = (
+            alt.layer(bars_total_scw, text_total_scw, lines_scw)
+              .properties(
+                  title="Tendencia mensual de publicaciones en Scopus y Web of Science",
+                  height=380
+              )
+        )
+
+        st.altair_chart(chart_scw, use_container_width=True)
+
 
 # ------------------ Tendencia mensual: publicaciones de impacto vs regionales ------------------
 st.subheader("Tendencia mensual de publicaciones de impacto y regionales")
