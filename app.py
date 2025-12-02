@@ -503,94 +503,7 @@ vis = vis[vis["SEDE"].isin(sede_sel)]    if sede_sel else vis
 
 # Paleta de verdes institucionales para categorías
 green_scale = alt.Scale(range=["#1B5E20", "#2E7D32", "#43A047", "#66BB6A", "#81C784", "#A5D6A7", "#C8E6C9"])
-# ------------------ Tendencia de publicación (Nombramiento) por MES, facultad y carrera ------------------
-st.subheader("Tendencia mensual de publicación (Nombramiento) por facultad y carrera")
 
-# Base coherente con los filtros globales del dashboard
-trend_base = slice_df(df, year_vis_sel, fac_sel, car_sel, tipo_sel, sede_sel)
-
-# Solo docentes de nombramiento
-trend_base = trend_base[trend_base["VINCULACION_PUB"].eq("NOMBRAMIENTO")]
-
-# Evitar problemas si no existe MES
-trend_base = trend_base.dropna(subset=["MES"])
-
-if trend_base.empty:
-    st.info("No existen publicaciones de docentes de nombramiento con los filtros actuales.")
-else:
-    # paleta de colores fuertes para distinguir series
-    strong_palette = [
-        "#1B5E20",  # verde oscuro
-        "#0D47A1",  # azul
-        "#B71C1C",  # rojo
-        "#4A148C",  # morado
-        "#E65100",  # naranja
-        "#00695C",  # verde azulado
-        "#880E4F",  # vino
-    ]
-
-    # ---------- Tendencia por FACULTAD (mensual) ----------
-    trend_fac = (
-        trend_base
-        .dropna(subset=["FACULTAD"])
-        .groupby(["MES", "FACULTAD"])
-        .size()
-        .reset_index(name="Publicaciones")
-        .sort_values("MES")
-    )
-
-    chart_trend_fac = (
-        alt.Chart(trend_fac)
-          .mark_line(point=alt.OverlayMarkDef(size=70, filled=True), strokeWidth=3)
-          .encode(
-              x=alt.X("MES:O", title="Mes", sort=None),
-              y=alt.Y("Publicaciones:Q", title="N.º de publicaciones"),
-              color=alt.Color(
-                  "FACULTAD:N",
-                  title="Facultad",
-                  scale=alt.Scale(range=strong_palette)
-              ),
-              tooltip=["MES", "FACULTAD", "Publicaciones"]
-          )
-          .properties(
-              title="Tendencia mensual de publicaciones por facultad (Nombramiento)",
-              height=330
-          )
-    )
-    st.altair_chart(chart_trend_fac, use_container_width=True)
-
-    # ---------- Tendencia por CARRERA (mensual) ----------
-    trend_car = (
-        trend_base
-        .dropna(subset=["CARRERA"])
-        .groupby(["MES", "CARRERA"])
-        .size()
-        .reset_index(name="Publicaciones")
-        .sort_values("MES")
-    )
-
-    if trend_car.empty:
-        st.info("No hay registros de carrera para mostrar la tendencia mensual por carrera con los filtros actuales.")
-    else:
-        chart_trend_car = (
-            alt.Chart(trend_car)
-              .mark_line(point=alt.OverlayMarkDef(size=60, filled=True), strokeWidth=2.7)
-              .encode(
-                  x=alt.X("MES:O", title="Mes", sort=None),
-                  y=alt.Y("Publicaciones:Q", title="N.º de publicaciones"),
-                  color=alt.Color(
-                      "CARRERA:N",
-                      title="Carrera",
-                      scale=alt.Scale(range=strong_palette)
-                  ),
-                  tooltip=["MES", "CARRERA", "Publicaciones"]
-              )
-              .properties(
-                  title="Tendencia mensual de publicaciones por carrera (Nombramiento)",
-                  height=330
-              )
-        )
-        st.altair_chart(chart_trend_car, use_container_width=True)
 
 # ------------------ Tendencia de publicación (Nombramiento) por año, facultad y carrera ------------------
 st.subheader("Tendencia de publicación de Docentes con Nombramiento por año, facultad y carrera")
@@ -834,6 +747,107 @@ else:
 
 st.divider()
 st.subheader("Exploración de publicaciones ")
+# ------------------ Tendencia mensual: publicaciones de impacto vs regionales ------------------
+st.subheader("Tendencia mensual de publicaciones de impacto y regionales")
+
+# Base coherente con los filtros globales del dashboard
+trend_base = slice_df(df, year_vis_sel, fac_sel, car_sel, tipo_sel, sede_sel)
+
+# Asegurar que exista la columna MES y que tenga datos válidos
+trend_base = trend_base.dropna(subset=["MES"])
+
+if trend_base.empty:
+    st.info("No existen publicaciones con fecha de publicación válida para los filtros actuales.")
+else:
+    import unicodedata, re
+
+    def _norm(s: str) -> str:
+        s = str(s or "").strip().upper()
+        s = unicodedata.normalize("NFD", s)
+        s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+        s = re.sub(r"\s+", " ", s)
+        return s
+
+    def clasifica_impacto_regional(row):
+        clase = _norm(row.get("CLASE_NORM", ""))
+        cu    = _norm(row.get("CUARTIL", ""))
+        idx   = _norm(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
+
+        # Solo nos interesan artículos y proceedings
+        if "ARTICULO" in clase or "ARTICLE" in clase or "PROCEEDINGS" in clase:
+            # Publicaciones de impacto (Q1–Q4 o Scopus/WoS/Web of Science)
+            if cu in {"Q1", "Q2", "Q3", "Q4"} or any(k in idx for k in ["SCOPUS", "WOS", "WEB OF SCIENCE"]):
+                return "Impacto"
+            # Publicaciones regionales (Latindex, otras bases no vacías)
+            if "LATINDEX" in idx or idx not in {"", "NO REGISTRADO", "NAN"}:
+                return "Regional"
+        return None
+
+    trend_base["TIPO_IMPACTO"] = trend_base.apply(clasifica_impacto_regional, axis=1)
+    trend_base = trend_base.dropna(subset=["TIPO_IMPACTO"])
+
+    if trend_base.empty:
+        st.info("No hay publicaciones clasificadas como de impacto o regionales con los filtros actuales.")
+    else:
+        # Paleta sencilla y clara para distinguir impacto vs regional
+        color_impacto = "#1B5E20"   # verde oscuro (impacto)
+        color_regional = "#2E7D32"  # verde medio (regional)
+
+        # ---------- Tendencia mensual de publicaciones de impacto ----------
+        trend_imp = (
+            trend_base[trend_base["TIPO_IMPACTO"] == "Impacto"]
+            .groupby("MES")
+            .size()
+            .reset_index(name="Publicaciones")
+            .sort_values("MES")
+        )
+
+        if trend_imp.empty:
+            st.info("No hay publicaciones de impacto con los filtros actuales.")
+        else:
+            chart_trend_imp = (
+                alt.Chart(trend_imp)
+                  .mark_line(point=alt.OverlayMarkDef(size=70, filled=True), strokeWidth=3)
+                  .encode(
+                      x=alt.X("MES:O", title="Mes", sort=None),
+                      y=alt.Y("Publicaciones:Q", title="N.º de publicaciones"),
+                      tooltip=["MES", "Publicaciones"]
+                  )
+                  .properties(
+                      title="Tendencia mensual de publicaciones de impacto",
+                      height=320
+                  )
+                  .encode(color=alt.value(color_impacto))
+            )
+            st.altair_chart(chart_trend_imp, use_container_width=True)
+
+        # ---------- Tendencia mensual de publicaciones regionales ----------
+        trend_reg = (
+            trend_base[trend_base["TIPO_IMPACTO"] == "Regional"]
+            .groupby("MES")
+            .size()
+            .reset_index(name="Publicaciones")
+            .sort_values("MES")
+        )
+
+        if trend_reg.empty:
+            st.info("No hay publicaciones regionales con los filtros actuales.")
+        else:
+            chart_trend_reg = (
+                alt.Chart(trend_reg)
+                  .mark_line(point=alt.OverlayMarkDef(size=70, filled=True), strokeWidth=3)
+                  .encode(
+                      x=alt.X("MES:O", title="Mes", sort=None),
+                      y=alt.Y("Publicaciones:Q", title="N.º de publicaciones"),
+                      tooltip=["MES", "Publicaciones"]
+                  )
+                  .properties(
+                      title="Tendencia mensual de publicaciones regionales",
+                      height=320
+                  )
+                  .encode(color=alt.value(color_regional))
+            )
+            st.altair_chart(chart_trend_reg, use_container_width=True)
 
 # Publicaciones por año (apilado por vinculación)
 by_year_vinc = vis.groupby(["AÑO","VINCULACION_PUB"]).size().reset_index(name="Publicaciones")
