@@ -765,16 +765,16 @@ else:
         s = re.sub(r"\s+", " ", s)
         return s
 
-def clasifica_impacto_regional(row):
-    clase = _norm(row.get("CLASE_NORM", ""))
-    cu    = _norm(row.get("CUARTIL", ""))
-    idx   = _norm(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
-
-    es_proceedings = "PROCEEDINGS" in clase
-    es_articulo    = ("ARTICULO" in clase) or ("ARTICLE" in clase)
-
-    tiene_scopus = "SCOPUS" in idx
-    tiene_wos    = ("WOS" in idx) or ("WEB OF SCIENCE" in idx)
+    def clasifica_impacto_regional(row):
+        clase = _norm(row.get("CLASE_NORM", ""))
+        cu    = _norm(row.get("CUARTIL", ""))
+        idx   = _norm(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
+    
+        es_proceedings = "PROCEEDINGS" in clase
+        es_articulo    = ("ARTICULO" in clase) or ("ARTICLE" in clase)
+    
+        tiene_scopus = "SCOPUS" in idx
+        tiene_wos    = ("WOS" in idx) or ("WEB OF SCIENCE" in idx)
 
     # 1) PROCEEDINGS en Scopus/WoS → Impacto explícitamente
     if es_proceedings and (tiene_scopus or tiene_wos):
@@ -894,18 +894,18 @@ else:
         s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
         s = re.sub(r"\s+", " ", s)
         return s
-def clasifica_scopus_wos(row):
-    idx = _norm_local(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
-
-    tiene_scopus = "SCOPUS" in idx
-    tiene_wos    = ("WOS" in idx) or ("WEB OF SCIENCE" in idx)
-
-    # Si aparece en ambas → se asigna SOLO a Scopus (evita 3ra categoría)
-    if tiene_scopus:
-        return "Scopus"
-
-    if tiene_wos:
-        return "Web of Science"
+    def clasifica_scopus_wos(row):
+        idx = _norm_local(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
+    
+        tiene_scopus = "SCOPUS" in idx
+        tiene_wos    = ("WOS" in idx) or ("WEB OF SCIENCE" in idx)
+    
+        # Si aparece en ambas → se asigna SOLO a Scopus (evita 3ra categoría)
+        if tiene_scopus:
+            return "Scopus"
+    
+        if tiene_wos:
+            return "Web of Science"
 
     return None
 
