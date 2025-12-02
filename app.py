@@ -81,6 +81,22 @@ df = pd.read_excel(xfile, sheet_name=sheet_pub) if sheet_pub else pd.read_excel(
 df = _cols_upper(df)
 df_raw = df.copy()  # copia completa ANTES de cualquier deduplicación
 
+# ------------------ FECHA PUBLICADO → AÑO y MES ------------------
+if "FECHA PUBLICADO" in df.columns:
+    # convertir a datetime en ambos dataframes
+    df["FECHA_PUBLICADO_DT"] = pd.to_datetime(df["FECHA PUBLICADO"], errors="coerce")
+    df_raw["FECHA_PUBLICADO_DT"] = pd.to_datetime(df_raw["FECHA PUBLICADO"], errors="coerce")
+
+    # asegurar AÑO coherente con la fecha (solo si se puede extraer)
+    df["AÑO"] = df["FECHA_PUBLICADO_DT"].dt.year.astype("Int64")
+
+    # columna MES tipo 'YYYY-MM' para agrupar por mes
+    df["MES"] = df["FECHA_PUBLICADO_DT"].dt.to_period("M").astype(str)
+    df_raw["MES"] = df_raw["FECHA_PUBLICADO_DT"].dt.to_period("M").astype(str)
+else:
+    # si no existe, no se puede hacer tendencia mensual
+    df["MES"] = pd.NA
+    df_raw["MES"] = pd.NA
 
 # ------------------ Asegurar columnas mínimas ------------------
 for col in [
@@ -487,6 +503,94 @@ vis = vis[vis["SEDE"].isin(sede_sel)]    if sede_sel else vis
 
 # Paleta de verdes institucionales para categorías
 green_scale = alt.Scale(range=["#1B5E20", "#2E7D32", "#43A047", "#66BB6A", "#81C784", "#A5D6A7", "#C8E6C9"])
+# ------------------ Tendencia de publicación (Nombramiento) por MES, facultad y carrera ------------------
+st.subheader("Tendencia mensual de publicación (Nombramiento) por facultad y carrera")
+
+# Base coherente con los filtros globales del dashboard
+trend_base = slice_df(df, year_vis_sel, fac_sel, car_sel, tipo_sel, sede_sel)
+
+# Solo docentes de nombramiento
+trend_base = trend_base[trend_base["VINCULACION_PUB"].eq("NOMBRAMIENTO")]
+
+# Evitar problemas si no existe MES
+trend_base = trend_base.dropna(subset=["MES"])
+
+if trend_base.empty:
+    st.info("No existen publicaciones de docentes de nombramiento con los filtros actuales.")
+else:
+    # paleta de colores fuertes para distinguir series
+    strong_palette = [
+        "#1B5E20",  # verde oscuro
+        "#0D47A1",  # azul
+        "#B71C1C",  # rojo
+        "#4A148C",  # morado
+        "#E65100",  # naranja
+        "#00695C",  # verde azulado
+        "#880E4F",  # vino
+    ]
+
+    # ---------- Tendencia por FACULTAD (mensual) ----------
+    trend_fac = (
+        trend_base
+        .dropna(subset=["FACULTAD"])
+        .groupby(["MES", "FACULTAD"])
+        .size()
+        .reset_index(name="Publicaciones")
+        .sort_values("MES")
+    )
+
+    chart_trend_fac = (
+        alt.Chart(trend_fac)
+          .mark_line(point=alt.OverlayMarkDef(size=70, filled=True), strokeWidth=3)
+          .encode(
+              x=alt.X("MES:O", title="Mes", sort=None),
+              y=alt.Y("Publicaciones:Q", title="N.º de publicaciones"),
+              color=alt.Color(
+                  "FACULTAD:N",
+                  title="Facultad",
+                  scale=alt.Scale(range=strong_palette)
+              ),
+              tooltip=["MES", "FACULTAD", "Publicaciones"]
+          )
+          .properties(
+              title="Tendencia mensual de publicaciones por facultad (Nombramiento)",
+              height=330
+          )
+    )
+    st.altair_chart(chart_trend_fac, use_container_width=True)
+
+    # ---------- Tendencia por CARRERA (mensual) ----------
+    trend_car = (
+        trend_base
+        .dropna(subset=["CARRERA"])
+        .groupby(["MES", "CARRERA"])
+        .size()
+        .reset_index(name="Publicaciones")
+        .sort_values("MES")
+    )
+
+    if trend_car.empty:
+        st.info("No hay registros de carrera para mostrar la tendencia mensual por carrera con los filtros actuales.")
+    else:
+        chart_trend_car = (
+            alt.Chart(trend_car)
+              .mark_line(point=alt.OverlayMarkDef(size=60, filled=True), strokeWidth=2.7)
+              .encode(
+                  x=alt.X("MES:O", title="Mes", sort=None),
+                  y=alt.Y("Publicaciones:Q", title="N.º de publicaciones"),
+                  color=alt.Color(
+                      "CARRERA:N",
+                      title="Carrera",
+                      scale=alt.Scale(range=strong_palette)
+                  ),
+                  tooltip=["MES", "CARRERA", "Publicaciones"]
+              )
+              .properties(
+                  title="Tendencia mensual de publicaciones por carrera (Nombramiento)",
+                  height=330
+              )
+        )
+        st.altair_chart(chart_trend_car, use_container_width=True)
 
 # ------------------ Tendencia de publicación (Nombramiento) por año, facultad y carrera ------------------
 st.subheader("Tendencia de publicación de Docentes con Nombramiento por año, facultad y carrera")
