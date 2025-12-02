@@ -765,7 +765,7 @@ else:
         s = re.sub(r"\s+", " ", s)
         return s
 
-    def clasifica_impacto_regional(row):
+def clasifica_impacto_regional(row):
     clase = _norm(row.get("CLASE_NORM", ""))
     cu    = _norm(row.get("CUARTIL", ""))
     idx   = _norm(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
@@ -778,7 +778,7 @@ else:
     if es_proceedings and (tiene_scopus or tiene_wos):
         return "Impacto"
 
-    # 2) Artículos (y también proceedings que pasen por aquí) de impacto
+    # 2) Artículos o proceedings en general
     if "ARTICULO" in clase or "ARTICLE" in clase or es_proceedings:
         # Impacto: cuartil o Scopus/WoS
         if cu in {"Q1","Q2","Q3","Q4"} or tiene_scopus or tiene_wos:
@@ -788,9 +788,8 @@ else:
         if "LATINDEX" in idx or idx not in {"", "NO REGISTRADO", "NAN"}:
             return "Regional"
 
-    # 3) Todo lo demás no entra en este gráfico
+    # 3) Todo lo demás queda fuera del gráfico
     return None
-
 
     trend_base["TIPO_IMPACTO"] = trend_base.apply(clasifica_impacto_regional, axis=1)
     trend_base = trend_base.dropna(subset=["TIPO_IMPACTO"])
