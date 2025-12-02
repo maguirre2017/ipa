@@ -747,10 +747,14 @@ else:
 
 st.divider()
 st.subheader("Exploración de publicaciones ")
+
 # ------------------ Tendencia mensual: publicaciones de impacto vs regionales (verde vs azul) ------------------
 st.subheader("Tendencia mensual de publicaciones de impacto y regionales")
 
+# Base coherente con filtros globales
 trend_base = slice_df(df, year_vis_sel, fac_sel, car_sel, tipo_sel, sede_sel)
+
+# Asegurar que exista MES
 trend_base = trend_base.dropna(subset=["MES"])
 
 if trend_base.empty:
@@ -758,50 +762,52 @@ if trend_base.empty:
 else:
     import unicodedata, re
 
-    def _norm(s: str) -> str:
+    def _norm_local(s: str) -> str:
         s = str(s or "").strip().upper()
         s = unicodedata.normalize("NFD", s)
         s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
         s = re.sub(r"\s+", " ", s)
         return s
 
-def clasifica_impacto_regional(row):
-    clase = _norm(row.get("CLASE_NORM", ""))
-    cu    = _norm(row.get("CUARTIL", ""))
-    idx   = _norm(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
+    def clasifica_impacto_regional(row):
+        clase = _norm_local(row.get("CLASE_NORM", ""))
+        cu    = _norm_local(row.get("CUARTIL", ""))
+        idx   = _norm_local(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
 
-    es_proceedings = "PROCEEDINGS" in clase
-    es_articulo    = ("ARTICULO" in clase) or ("ARTICLE" in clase)
+        es_proceedings = "PROCEEDINGS" in clase
+        es_articulo    = ("ARTICULO" in clase) or ("ARTICLE" in clase)
 
-    tiene_scopus = "SCOPUS" in idx
-    tiene_wos    = ("WOS" in idx) or ("WEB OF SCIENCE" in idx)
+        tiene_scopus = "SCOPUS" in idx
+        tiene_wos    = ("WOS" in idx) or ("WEB OF SCIENCE" in idx)
 
-    # 1) PROCEEDINGS en Scopus/WoS → Impacto
-    if es_proceedings and (tiene_scopus or tiene_wos):
-        return "Impacto"
+        # 1) PROCEEDINGS en Scopus/WoS → Impacto
+        if es_proceedings and (tiene_scopus or tiene_wos):
+            return "Impacto"
 
-    # 2) Artículos o proceedings con cuartil o Scopus/WoS → Impacto
-    if (es_articulo or es_proceedings) and (
-        cu in {"Q1", "Q2", "Q3", "Q4"} or tiene_scopus or tiene_wos
-    ):
-        return "Impacto"
+        # 2) Artículos o proceedings con cuartil o Scopus/WoS → Impacto
+        if (es_articulo or es_proceedings) and (
+            cu in {"Q1", "Q2", "Q3", "Q4"} or tiene_scopus or tiene_wos
+        ):
+            return "Impacto"
 
-    # 3) Regional: Latindex u otra base registrada
-    if (es_articulo or es_proceedings):
-        if "LATINDEX" in idx:
-            return "Regional"
-        if idx not in {"", "NO REGISTRADO", "NAN"}:
-            return "Regional"
+        # 3) Publicaciones regionales (Latindex u otra base registrada distinta de vacío/NO REGISTRADO/NAN)
+        if es_articulo or es_proceedings:
+            if "LATINDEX" in idx:
+                return "Regional"
+            if idx not in {"", "NO REGISTRADO", "NAN"}:
+                return "Regional"
 
-    # 4) Sin clasificación
-    return None
+        # 4) Sin clasificación (no entra al gráfico)
+        return None
 
+    # Clasificar impacto / regional
     trend_base["TIPO_IMPACTO"] = trend_base.apply(clasifica_impacto_regional, axis=1)
     trend_base = trend_base.dropna(subset=["TIPO_IMPACTO"])
 
     if trend_base.empty:
-        st.info("No hay publicaciones clasificadas como de impacto o regionales.")
+        st.info("No hay publicaciones clasificadas como de impacto o regionales con los filtros actuales.")
     else:
+        # Agregación mensual por tipo
         imp_reg = (
             trend_base
             .groupby(["MES", "TIPO_IMPACTO"])
@@ -809,6 +815,7 @@ def clasifica_impacto_regional(row):
             .reset_index(name="Publicaciones")
         )
 
+        # Totales mensuales (impacto + regional)
         totales = (
             imp_reg
             .groupby("MES")["Publicaciones"]
@@ -816,22 +823,23 @@ def clasifica_impacto_regional(row):
             .reset_index(name="Total")
         )
 
+        # Unir totales
         imp_reg = imp_reg.merge(totales, on="MES", how="left").sort_values("MES")
 
-        # Paleta: Impacto = verde — Regional = azul
+        # Paleta: Impacto = verde, Regional = azul
         domain_tipo = ["Impacto", "Regional"]
         range_tipo  = ["#1B5E20", "#1565C0"]
 
         base = alt.Chart(imp_reg)
 
-        # Barras de totales mensuales
+        # Barras de total mensual
         bars_total = (
             base
             .mark_bar(opacity=0.25)
             .encode(
                 x=alt.X("MES:O", title="Mes", sort=None),
                 y=alt.Y("Total:Q", title="N.º de publicaciones"),
-                tooltip=["MES","Total"]
+                tooltip=["MES", "Total"]
             )
         )
 
@@ -846,7 +854,7 @@ def clasifica_impacto_regional(row):
             )
         )
 
-        # Líneas: impacto (verde) y regional (azul)
+        # Líneas: Impacto (verde) y Regional (azul)
         lines_imp_reg = (
             base
             .mark_line(
@@ -861,7 +869,7 @@ def clasifica_impacto_regional(row):
                     title="Tipo de publicación",
                     scale=alt.Scale(domain=domain_tipo, range=range_tipo)
                 ),
-                tooltip=["MES","TIPO_IMPACTO","Publicaciones","Total"]
+                tooltip=["MES", "TIPO_IMPACTO", "Publicaciones", "Total"]
             )
         )
 
