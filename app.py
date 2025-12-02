@@ -765,37 +765,36 @@ else:
         s = re.sub(r"\s+", " ", s)
         return s
 
-    def clasifica_impacto_regional(row):
-        clase = _norm(row.get("CLASE_NORM", ""))
-        cu    = _norm(row.get("CUARTIL", ""))
-        idx   = _norm(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
-    
-        es_proceedings = "PROCEEDINGS" in clase
-        es_articulo    = ("ARTICULO" in clase) or ("ARTICLE" in clase)
-    
-        tiene_scopus = "SCOPUS" in idx
-        tiene_wos    = ("WOS" in idx) or ("WEB OF SCIENCE" in idx)
+def clasifica_impacto_regional(row):
+    clase = _norm(row.get("CLASE_NORM", ""))
+    cu    = _norm(row.get("CUARTIL", ""))
+    idx   = _norm(row.get("INDEXACIÓN", "") or row.get("INDEXACION", ""))
 
-    # 1) PROCEEDINGS en Scopus/WoS → Impacto explícitamente
+    es_proceedings = "PROCEEDINGS" in clase
+    es_articulo    = ("ARTICULO" in clase) or ("ARTICLE" in clase)
+
+    tiene_scopus = "SCOPUS" in idx
+    tiene_wos    = ("WOS" in idx) or ("WEB OF SCIENCE" in idx)
+
+    # 1) PROCEEDINGS en Scopus/WoS → Impacto
     if es_proceedings and (tiene_scopus or tiene_wos):
         return "Impacto"
 
-    # 2) Cualquier registro (artículo o proceedings) con cuartil o Scopus/WoS → Impacto
+    # 2) Artículos o proceedings con cuartil o Scopus/WoS → Impacto
     if (es_articulo or es_proceedings) and (
         cu in {"Q1", "Q2", "Q3", "Q4"} or tiene_scopus or tiene_wos
     ):
         return "Impacto"
 
-    # 3) Regional: Latindex u otra base registrada distinta de vacío / NO REGISTRADO / NAN
+    # 3) Regional: Latindex u otra base registrada
     if (es_articulo or es_proceedings):
         if "LATINDEX" in idx:
             return "Regional"
         if idx not in {"", "NO REGISTRADO", "NAN"}:
             return "Regional"
 
-    # 4) Todo lo demás no entra al gráfico
+    # 4) Sin clasificación
     return None
-
 
     trend_base["TIPO_IMPACTO"] = trend_base.apply(clasifica_impacto_regional, axis=1)
     trend_base = trend_base.dropna(subset=["TIPO_IMPACTO"])
